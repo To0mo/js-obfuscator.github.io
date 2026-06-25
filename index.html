@@ -1293,7 +1293,7 @@ async function runObfuscation(code, config) {
     progress(80, 'Minifying output');
     const terserResult = await Terser.minify(currentCode, {
         mangle: false,
-        compress: { dead_code: false, drop_console: false, evaluate: false, inline: false, loops: false, reduce_vars: false, sequences: true, passes: 2, properties: false, computed_props: false },
+        compress: false,
         output: { beautify: false, keep_quoted_props: true }
     });
     if (!terserResult.code) throw new Error('Terser returned empty output');
