@@ -1,0 +1,1422 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JS Obfuscator</title>
+    <!-- CodeMirror & Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/codemirror.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.13/mode/javascript/javascript.min.js"></script>
+    
+    <style>
+        /* ベース・スクロールバー */
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+        ::-webkit-scrollbar { width: 10px; height: 10px; }
+        ::-webkit-scrollbar-track { background: #0E0E0E; }
+        ::-webkit-scrollbar-thumb { background: #2A2A2A; border: 2px solid #0E0E0E; }
+        ::-webkit-scrollbar-thumb:hover { background: #404040; }
+
+        /* OS標準UIを完全廃止したカスタム・チェックボックス */
+        input[type="checkbox"] {
+            -webkit-appearance: none; appearance: none;
+            width: 14px; height: 14px;
+            background: #1A1A1A; border: 1px solid #333333;
+            cursor: pointer; position: relative; border-radius: 2px;
+        }
+        input[type="checkbox"]:checked { background: #EDEDED; border-color: #EDEDED; }
+        input[type="checkbox"]:checked::after {
+            content: ''; position: absolute; top: 1px; left: 4px;
+            width: 4px; height: 8px; border: solid #0E0E0E;
+            border-width: 0 2px 2px 0; transform: rotate(45deg);
+        }
+
+        /* OS標準UIを完全廃止したカスタム・スライダー */
+        input[type="range"] {
+            -webkit-appearance: none; appearance: none;
+            width: 100%; height: 4px; background: #2A2A2A; cursor: pointer; outline: none;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none; appearance: none;
+            width: 8px; height: 16px; background: #EDEDED; cursor: ew-resize;
+        }
+
+        /* エディタのシンタックスハイライト (VS Code風ダークソリッド) */
+        .cm-s-solid.CodeMirror { 
+    position: absolute; top: 0; bottom: 0; left: 0; right: 0; height: 100% !important; width: 100% !important;
+    background: #141414; color: #D4D4D4; font-family: 'Fira Mono', monospace; font-size: 13px; 
+}
+        .cm-s-solid .CodeMirror-gutters { background: #141414; border-right: 1px solid #1F1F1F; }
+        .cm-s-solid .CodeMirror-linenumber { color: #555555; }
+        .cm-s-solid .CodeMirror-cursor { border-left: 2px solid #EDEDED; }
+        .cm-s-solid .cm-keyword { color: #569CD6; }
+        .cm-s-solid .cm-operator { color: #D4D4D4; }
+        .cm-s-solid .cm-variable-2 { color: #9CDCFE; }
+        .cm-s-solid .cm-variable-3, .cm-s-solid .cm-type { color: #4EC9B0; }
+        .cm-s-solid .cm-builtin { color: #4FC1FF; }
+        .cm-s-solid .cm-atom { color: #569CD6; }
+        .cm-s-solid .cm-number { color: #B5CEA8; }
+        .cm-s-solid .cm-def { color: #DCDCAA; }
+        .cm-s-solid .cm-string, .cm-s-solid .cm-string-2 { color: #CE9178; }
+        .cm-s-solid .cm-comment { color: #6A9955; }
+        .cm-s-solid .cm-property { color: #9CDCFE; }
+        .cm-s-solid .CodeMirror-matchingbracket { color: #FFFFFF; border-bottom: 1px solid #569CD6; }
+        .cm-s-solid .CodeMirror-selected { background: #264F78; }
+        .CodeMirror-focused .CodeMirror-selected { background: #264F78; }
+    </style>
+</head>
+<body class="bg-[#0E0E0E] text-[#A1A1A1] font-sans selection:bg-[#264F78] h-screen overflow-hidden flex flex-col relative">
+    
+    <!-- トップヘッダー -->
+    <header class="h-14 border-b border-[#1F1F1F] bg-[#141414] shadow-md flex items-center justify-between px-6 shrink-0 z-50">
+        <div class="flex items-center gap-3">
+            <div class="w-3 h-3 bg-[#4EC9B0] rounded-sm shadow-[0_0_8px_rgba(78,201,176,0.5)]"></div>
+            <h1 class="text-sm font-bold text-[#EDEDED] tracking-widest">JS OBFUSCATOR PRO</h1>
+        </div>
+        <div class="flex items-center gap-4">
+            <span id="statsLabel" class="text-xs font-mono text-[#7A7A7A] bg-[#0E0E0E] px-3 py-1 rounded-md border border-[#1F1F1F]">Size: 0 B -> 0 B</span>
+            <button id="testRunBtn" class="border border-[#333333] bg-[#0E0E0E] text-[#EDEDED] px-4 py-1.5 text-xs font-medium hover:bg-[#1A1A1A] active:bg-[#2A2A2A] transition-colors rounded-md shadow-sm">Test Run</button>
+            <button id="copyBtn" class="border border-[#333333] bg-[#0E0E0E] text-[#EDEDED] px-4 py-1.5 text-xs font-medium hover:bg-[#1A1A1A] active:bg-[#2A2A2A] transition-colors rounded-md shadow-sm">Copy Output</button>
+            <button id="obfuscateBtn" class="bg-[#EDEDED] text-[#0E0E0E] px-6 py-1.5 text-xs font-bold hover:bg-[#D4D4D4] active:bg-[#A1A1A1] transition-colors rounded-md shadow-sm disabled:bg-[#333333] disabled:text-[#7A7A7A]">OBFUSCATE</button>
+        </div>
+    </header>
+
+    <!-- メインコンテンツ (全体スクロール) -->
+    <main class="flex-1 overflow-y-auto p-6 flex flex-col gap-6 relative z-0">
+        
+        <!-- 上段：Input(左) / Output(中央) / Log(右) -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[60vh] min-h-[400px] shrink-0">
+            <!-- 左: Input エディタ -->
+            <div class="bg-[#141414] border border-[#1F1F1F] rounded-xl shadow-lg flex flex-col overflow-hidden relative">
+                <div class="px-5 py-3 border-b border-[#1F1F1F] bg-[#1A1A1A] flex items-center justify-between z-10">
+                    <span class="text-xs font-bold text-[#D4D4D4] uppercase tracking-widest">input.js</span>
+                </div>
+                <div class="flex-1 relative" id="editorInputContainer"></div>
+            </div>
+
+            <!-- 中央: Output エディタ -->
+            <div class="bg-[#141414] border border-[#1F1F1F] rounded-xl shadow-lg flex flex-col overflow-hidden relative">
+                <div class="px-5 py-3 border-b border-[#1F1F1F] bg-[#1A1A1A] flex items-center justify-between z-10">
+                    <span class="text-xs font-bold text-[#D4D4D4] uppercase tracking-widest">output.js</span>
+                </div>
+                <div class="flex-1 relative" id="editorOutputContainer"></div>
+            </div>
+
+            <!-- 右: Console Log -->
+            <div class="bg-[#141414] border border-[#1F1F1F] rounded-xl shadow-lg flex flex-col overflow-hidden relative">
+                <div class="px-5 py-3 border-b border-[#1F1F1F] bg-[#1A1A1A] flex items-center justify-between z-10">
+                    <span class="text-xs font-bold text-[#D4D4D4] uppercase tracking-widest">Console Logs</span>
+                    <button id="clearLogBtn" class="text-[10px] text-[#7A7A7A] hover:text-[#EDEDED] uppercase tracking-wider font-bold transition-colors bg-[#0E0E0E] px-3 py-1 rounded border border-[#1F1F1F]">Clear</button>
+                </div>
+                <div class="flex-1 overflow-y-auto p-4 font-mono text-[11px] bg-[#0E0E0E] text-[#D4D4D4] space-y-1.5 shadow-inner" id="logContainer">
+                    <div class="text-[#7A7A7A] italic">Ready...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 下段: Protection Settings -->
+        <div class="bg-[#141414] border border-[#1F1F1F] rounded-xl shadow-lg flex flex-col shrink-0 mb-6">
+            <div class="px-5 py-3 border-b border-[#1F1F1F] bg-[#1A1A1A]">
+                <h2 class="text-xs font-bold text-[#D4D4D4] uppercase tracking-widest">Protection Settings</h2>
+            </div>
+            <div class="p-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 text-xs font-medium">
+                
+                <!-- 列1 -->
+                <div class="space-y-4">
+                    <label class="flex items-center gap-3 cursor-pointer text-[#D4D4D4] hover:text-white"><input type="checkbox" id="chkStringArray" checked> String Array</label>
+                    <label class="flex items-center gap-3 cursor-pointer text-[#D4D4D4] hover:text-white"><input type="checkbox" id="chkStringEncoding" checked> String Encoding</label>
+                    <div class="bg-[#0E0E0E] p-3 rounded-md border border-[#1F1F1F]">
+                        <div class="flex justify-between text-[#7A7A7A] mb-1"><span>Decoder Variants</span><span id="valDecoderVariants">4</span></div>
+                        <input type="range" id="rangeDecoderVariants" min="2" max="10" value="4">
+                    </div>
+                    <label class="flex items-center gap-3 cursor-pointer text-[#D4D4D4] hover:text-white"><input type="checkbox" id="chkStringChunks" checked> String Chunks</label>
+                    <div class="bg-[#0E0E0E] p-3 rounded-md border border-[#1F1F1F]">
+                        <div class="flex justify-between text-[#7A7A7A] mb-1"><span>Chunk Size</span><span id="valChunkSize">8</span></div>
+                        <input type="range" id="rangeChunkSize" min="1" max="16" value="8">
+                    </div>
+                </div>
+
+                <!-- 列2 -->
+                <div class="space-y-4">
+                    <label class="flex items-center gap-3 cursor-pointer text-[#D4D4D4] hover:text-white"><input type="checkbox" id="chkSelfDefending" checked> Self Defending</label>
+                    <label class="flex items-center gap-3 cursor-pointer text-[#D4D4D4] hover:text-white"><input type="checkbox" id="chkProxyHook" checked> Proxy Hook Protect</label>
+                    <label class="flex items-center gap-3 cursor-pointer text-[#D4D4D4] hover:text-white"><input type="checkbox" id="chkPacker" checked> UTF8 RC4 Shuffle Packer</label>
+                    <label class="flex items-center gap-3 cursor-pointer text-[#D4D4D4] hover:text-white"><input type="checkbox" id="chkEnvBinding" checked> Environment Binding</label>
+                    <label class="flex items-center gap-3 cursor-pointer text-[#D4D4D4] hover:text-white"><input type="checkbox" id="chkIntegrityCheck" checked> Integrity Check</label>
+                    <label class="flex items-center gap-3 cursor-pointer text-[#D4D4D4] hover:text-white"><input type="checkbox" id="chkDistributedWatchers" checked> Distributed Watchers</label>
+                </div>
+
+                <!-- 列3 -->
+                <div class="space-y-4">
+                    <label class="flex items-center gap-3 cursor-pointer text-[#D4D4D4] hover:text-white"><input type="checkbox" id="chkFragmentedLaunch" checked> Fragmented Launch</label>
+                    <div class="bg-[#0E0E0E] p-3 rounded-md border border-[#1F1F1F]">
+                        <div class="flex justify-between text-[#7A7A7A] mb-1"><span>Chunks</span><span id="valFragmentChunks">5</span></div>
+                        <input type="range" id="rangeFragmentChunks" min="2" max="60" value="5">
+                    </div>
+                    <div class="border-t border-[#1F1F1F] pt-4">
+                        <label class="flex items-center gap-3 cursor-pointer text-[#D4D4D4] hover:text-white mb-2"><input type="checkbox" id="chkCFF" checked> Control Flow Flattening</label>
+                        <div class="bg-[#0E0E0E] p-3 rounded-md border border-[#1F1F1F]">
+                            <div class="flex justify-between text-[#7A7A7A] mb-1"><span>Probability</span><span id="valCFF">100%</span></div>
+                            <input type="range" id="rangeCFF" min="1" max="100" value="100">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 列4 -->
+                <div class="space-y-4">
+                    <div class="pt-1">
+                        <label class="flex items-center gap-3 cursor-pointer text-[#D4D4D4] hover:text-white mb-2"><input type="checkbox" id="chkDeadCode" checked> Dead Code Injection</label>
+                        <div class="bg-[#0E0E0E] p-3 rounded-md border border-[#1F1F1F]">
+                            <div class="flex justify-between text-[#7A7A7A] mb-1"><span>Intensity</span><span id="valDeadCode">50%</span></div>
+                            <input type="range" id="rangeDeadCode" min="1" max="100" value="50">
+                        </div>
+                    </div>
+                    <div class="border-t border-[#1F1F1F] pt-4">
+                        <label class="flex items-center gap-3 cursor-pointer text-[#D4D4D4] hover:text-white mb-2"><input type="checkbox" id="chkOpaqueZero" checked> Opaque Zero</label>
+                        <div class="bg-[#0E0E0E] p-3 rounded-md border border-[#1F1F1F]">
+                            <div class="flex justify-between text-[#7A7A7A] mb-1"><span>Probability</span><span id="valOpaqueZero">30%</span></div>
+                            <input type="range" id="rangeOpaqueZero" min="0" max="100" value="30">
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </main>
+
+    <!-- ローディングオーバーレイ (スピナー) -->
+    <div id="loadingOverlay" class="fixed inset-0 bg-[#000000d9] z-[100] flex flex-col items-center justify-center hidden backdrop-blur-sm transition-opacity">
+        <svg class="animate-spin h-14 w-14 text-[#4EC9B0] mb-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-20" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-90" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+        </svg>
+        <span id="progressLabel" class="text-sm font-bold tracking-widest uppercase text-white mb-2">OBFUSCATING...</span>
+        <span id="progressPercent" class="text-xs font-mono font-bold text-[#4EC9B0]">0%</span>
+    </div>
+
+    <!-- ライブラリ -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/terser/dist/bundle.min.js"></script>
+
+    <script>
+        const TOOL_SOURCE = document.currentScript.textContent;
+
+        // --- エディタ初期化 (CodeMirror) ---
+        let inputEditor, outputEditor;
+        document.addEventListener('DOMContentLoaded', () => {
+            const defaultCode = `(function() {
+    'use strict';
+    const AppConfig = {
+        label: "TEST_MODE_ACTIVE",
+        version: "v1.2.0"
+    };
+
+    function initHeader() {
+        console.log(\`[ \${AppConfig.label} ] | Current Version: \${AppConfig.version}\`);
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initHeader);
+    } else {
+        initHeader();
+    }
+})();`;
+            inputEditor = CodeMirror(document.getElementById('editorInputContainer'), {
+                value: defaultCode,
+                mode: "javascript",
+                theme: "solid",
+                lineNumbers: true,
+                indentUnit: 4
+            });
+            outputEditor = CodeMirror(document.getElementById('editorOutputContainer'), {
+                value: "// Output will appear here...",
+                mode: "javascript",
+                theme: "solid",
+                lineNumbers: true,
+                readOnly: true,
+                lineWrapping: true,
+                viewportMargin: 10
+            });
+        });
+
+        // --- UI イベント ---
+        document.getElementById('rangeCFF').addEventListener('input', e => document.getElementById('valCFF').textContent = e.target.value + '%');
+        document.getElementById('rangeDeadCode').addEventListener('input', e => document.getElementById('valDeadCode').textContent = e.target.value + '%');
+        document.getElementById('rangeOpaqueZero').addEventListener('input', e => document.getElementById('valOpaqueZero').textContent = e.target.value + '%');
+        document.getElementById('rangeChunkSize').addEventListener('input', e => document.getElementById('valChunkSize').textContent = e.target.value);
+        document.getElementById('rangeDecoderVariants').addEventListener('input', e => document.getElementById('valDecoderVariants').textContent = e.target.value);
+        document.getElementById('rangeFragmentChunks').addEventListener('input', e => document.getElementById('valFragmentChunks').textContent = e.target.value);
+
+        document.getElementById('copyBtn').addEventListener('click', () => {
+            const outCode = outputEditor.getValue();
+            if(!outCode || outCode.startsWith("//")) return;
+            navigator.clipboard.writeText(outCode).then(() => {
+                const btn = document.getElementById('copyBtn');
+                const orig = btn.textContent;
+                btn.textContent = "Copied!";
+                btn.style.color = "#4EC9B0"; // 成功時はフラットなアクセントカラーに
+                setTimeout(() => {
+                    btn.textContent = orig;
+                    btn.style.color = "";
+                }, 2000);
+            });
+        });
+        
+        // --- テスト実行＆ログコンソール機能 ---
+        const logContainer = document.getElementById('logContainer');
+
+        function appendLog(type, args) {
+            // 初期表示の "Ready..." を消す
+            if (logContainer.querySelector('div.italic')) logContainer.innerHTML = '';
+            
+            const logEl = document.createElement('div');
+            const msg = Array.from(args).map(arg => {
+                if (typeof arg === 'object') {
+                    try { return JSON.stringify(arg); } catch(e) { return String(arg); }
+                }
+                return String(arg);
+            }).join(' ');
+            
+            logEl.textContent = `> ${msg}`;
+            
+            // ログの種類で色分け
+            if (type === 'error') logEl.style.color = '#F48771';
+            else if (type === 'warn') logEl.style.color = '#CCA700';
+            else if (type === 'info') logEl.style.color = '#569CD6';
+            
+            logContainer.appendChild(logEl);
+            logContainer.scrollTop = logContainer.scrollHeight; // 自動スクロール
+        }
+
+        // ログのクリア
+        document.getElementById('clearLogBtn').addEventListener('click', () => {
+            logContainer.innerHTML = '<div class="text-[#7A7A7A] italic">Ready...</div>';
+        });
+
+        // Test Run 実行処理
+        document.getElementById('testRunBtn').addEventListener('click', () => {
+            const code = outputEditor.getValue();
+            if (!code || code.startsWith("//")) return;
+            
+            appendLog('info', ['--- Test Run Started ---']);
+            
+            // モジュールキャッシュの回避＆メイン環境の汚染を防ぐため、毎回新しいiframeを作成
+            const iframe = document.createElement('iframe');
+            iframe.style.display = 'none';
+            document.body.appendChild(iframe);
+
+            const iframeWindow = iframe.contentWindow;
+
+            // iframe内のコンソールをフックしてログ画面に出力させる
+            iframeWindow.console.log = (...args) => appendLog('log', args);
+            iframeWindow.console.warn = (...args) => appendLog('warn', args);
+            iframeWindow.console.error = (...args) => appendLog('error', args);
+            iframeWindow.console.info = (...args) => appendLog('info', args);
+
+            // iframe内のグローバルエラーもキャッチ
+            iframeWindow.onerror = (msg, url, lineNo) => {
+                appendLog('error', [`${msg} (Line: ${lineNo})`]);
+            };
+
+            // スクリプトの挿入
+            const script = iframeWindow.document.createElement('script');
+            script.type = 'module';
+            script.textContent = code;
+
+            try {
+                iframeWindow.document.body.appendChild(script);
+            } catch (e) {
+                appendLog('error', [e.toString()]);
+            }
+
+            // 動的インポート（非同期）を考慮し、約1秒後にiframeごと破棄して完了
+            setTimeout(() => {
+                try { document.body.removeChild(iframe); } catch(e){}
+                appendLog('info', ['--- Test Run Finished ---']);
+            }, 1000);
+        });
+
+        // --- コアスクリプト ---
+        let appConfig = {};
+        let renameMap = new Map();
+        let usedNames = new Set();
+        let rawStringArray = []; 
+        let stringArrayName = "";
+        let proxyNames = [];
+        let decodeConfigs = [];
+        let v_Date_name = "";
+        let v_Math_name = "";
+        let v_Crypto_name = "";
+        let v_wasmXor_name = "";
+
+        const reservedNames = new Set([
+            "window", "document", "console", "navigator", "location", "Object", "Array", "String", "Number", "Boolean", 
+            "Math", "Date", "RegExp", "Promise", "Proxy", "Symbol", "Function", "atob", "btoa", "fromCharCode", "charCodeAt",
+            "setTimeout", "setInterval", "alert", "log", "info", "warn", "error", "crypto", "WebAssembly", "Uint8Array", "Uint32Array",
+            // JSの予約語・リテラルを追加して衝突を防ぐ
+            "break", "case", "catch", "class", "const", "continue", "debugger", "default", "delete", "do", "else", "export", 
+            "extends", "finally", "for", "function", "if", "import", "in", "instanceof", "new", "return", "super", "switch", 
+            "this", "throw", "try", "typeof", "var", "void", "while", "with", "yield", "let", "package", "private", "protected", 
+            "public", "static", "true", "false", "null", "undefined"
+        ]);
+
+        // --- CSPRNG ヘルパー (ツール内部用) ---
+        function getRandomValue() {
+            const arr = new Uint32Array(1);
+            if (!globalThis.crypto || !globalThis.crypto["getRandomValues"]) return Math.random();
+            globalThis.crypto["getRandomValues"](arr);
+            return arr[0] / 0x100000000;
+        }
+        function getRandomInt(max) {
+            return Math.floor(getRandomValue() * max);
+        }
+
+        function toUtf8Bytes(str) {
+            return Array.from(new TextEncoder().encode(str));
+        }
+
+        function rotateByteLeft(value, shift) {
+            shift &= 7;
+            return ((value << shift) | (value >>> (8 - shift))) & 255;
+        }
+
+        function rc4Bytes(bytes, key) {
+            const s = Array.from({ length: 256 }, (_, i) => i);
+            let j = 0;
+            for (let i = 0; i < 256; i++) {
+                j = (j + s[i] + key[i % key["length"]]) & 255;
+                [s[i], s[j]] = [s[j], s[i]];
+            }
+            const out = [];
+            let i = 0;
+            j = 0;
+            for (let n = 0; n < bytes["length"]; n++) {
+                i = (i + 1) & 255;
+                j = (j + s[i]) & 255;
+                [s[i], s[j]] = [s[j], s[i]];
+                out["push"](bytes[n] ^ s[(s[i] + s[j]) & 255]);
+            }
+            return out;
+        }
+
+        function createShuffleOrder(length, seed) {
+            const order = Array.from({ length }, (_, i) => i);
+            let s = seed >>> 0;
+            if (s === 0) s = 1; // 0除算・ゼロ固定化の回避
+            for (let i = 0; i < length; i++) {
+                s = Math.imul(s, 2654435761) >>> 0;
+                // ★修正: XOR演算結果を >>> 0 で符号なし(正の数)に強制してから % を計算する
+                let j = ((s ^ (s >>> 16)) >>> 0) % length;
+                let k = ((s ^ i) >>> 0) % length;
+                let t = order[j]; order[j] = order[k]; order[k] = t;
+            }
+            return order;
+        }
+        function packUtf8Rc4ShuffleBase122(source) {
+            // 英数字(62) + 指定記号(12) + 普通の記号(21) + ギリシャ文字(24) + その他(3) = ちょうど122種類
+            const poolChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789%@#¥£€$ΛΣÆŒĲ!&*+-./:;<=>?[]^_{|}~αβγδεζηθικλμνξοπρστυφχψω´¸¨";
+            const pool = Array.from(poolChars).map(c => c["charCodeAt"](0));
+            
+            // ランダムキーでXOR暗号化
+            const symKey = getRandomInt(255) + 1;
+            
+            // ★ 配列の羅列をなくすため、文字コードを2バイト(リトルエンディアン)に分割し、
+            // 1つの短いBase64文字列に圧縮して埋め込む(約328文字になります)
+            const dictBytes = [];
+            for (let i = 0; i < 122; i++) {
+                let c = pool[i] ^ symKey;
+                dictBytes.push(c & 255, (c >> 8) & 255);
+            }
+            const b64Dict = btoa(String["fromCharCode"].apply(null, dictBytes));
+
+            const keyLength = getRandomInt(9) + 12;
+            const key = [];
+            for (let i = 0; i < keyLength; i++) key["push"](getRandomInt(256));
+            const seed = getRandomInt(0xFFFFFFFF) >>> 0;
+            
+            // ソースをUTF8化しRC4暗号化してシャッフル
+            const encrypted = rc4Bytes(toUtf8Bytes(source), key);
+            const order = createShuffleOrder(encrypted["length"], seed);
+            const shuffled = order.map(i => encrypted[i]);
+            
+            // 3バイト(24bit)ごとに4文字のBase122へエンコード
+            let packed = "";
+            let pad = (3 - (shuffled["length"] % 3)) % 3; 
+            for (let i = 0; i < pad; i++) shuffled["push"](0);
+
+            for (let i = 0; i < shuffled["length"]; i += 3) {
+                let val = (shuffled[i] << 16) | (shuffled[i+1] << 8) | shuffled[i+2];
+                for (let j = 0; j < 4; j++) {
+                    packed += String["fromCharCode"](pool[val % 122]);
+                    val = Math.floor(val / 122);
+                }
+            }
+            
+            const runnerName = generateWwmMName();
+            
+            // ★ デコーダー側の配列を削除し、 C=atob("...") とビットシフトで復元する極小コードに変更
+            return `(function(){var ${runnerName}=${JSON.stringify(packed)},k=${JSON.stringify(key)},q=${seed}>>>0,f=String[${createRuntimeStringCode('fromCharCode')}];function o(n){for(var a=[],i=0;i<n;i++)a[i]=i;var s=q||1;for(i=0;i<n;i++){s=Math.imul(s,2654435761)>>>0;var j=((s^(s>>>16))>>>0)%n,l=((s^i)>>>0)%n,t=a[j];a[j]=a[l];a[l]=t}return a}function r(b,k){for(var s=[],i=0;i<256;i++)s[i]=i;for(var j=0,i=0;i<256;i++){j=(j+s[i]+k[i%k.length])&255;var t=s[i];s[i]=s[j];s[j]=t}for(var y=[],i=0,j=0,n=0;n<b.length;n++){i=(i+1)&255;j=(j+s[i])&255;t=s[i];s[i]=s[j];s[j]=t;y[n]=b[n]^s[(s[i]+s[j])&255]}return y}function u(a){for(var s="",i=0;i<a.length;i+=8192)s+=f.apply(null,a.slice(i,i+8192));return btoa(s)}var m={},C=atob("${b64Dict}"),i=0,v,b=[];for(;i<122;)m[f((C.charCodeAt(i*2)|C.charCodeAt(i*2+1)<<8)^${symKey})]=i++;for(i=0;i<${runnerName}.length;i+=4){v=m[${runnerName}[i]]+m[${runnerName}[i+1]]*122+m[${runnerName}[i+2]]*14884+m[${runnerName}[i+3]]*1815848;b.push(v>>16,(v>>8)&255,v&255)}b.length-=${pad};var p=o(b.length),e=[];for(i=0;i<p.length;i++)e[p[i]]=b[i];import("data:text/javascript;charset=utf-8;base64,"+u(r(e,k)))})();`;
+        }
+        function markObfuscated(node) {
+            if (!node || typeof node !== 'object') return;
+            if (node._isObfuscated) return;
+            node._isObfuscated = true;
+            for (const key in node) {
+                if (['loc', 'start', 'end', 'comments'].includes(key)) continue;
+                if (Array.isArray(node[key])) node[key].forEach(markObfuscated);
+                else if (node[key] && typeof node[key] === 'object') markObfuscated(node[key]);
+            }
+        }
+
+        function generateWwmMName() {
+            const headChars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_$'.split('');
+            const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_$'.split('');
+            
+            const len = getRandomInt(3) + 4;
+            let name;
+            do {
+                name = headChars[getRandomInt(headChars.length)];
+                for(let i = 1; i < len; i++) {
+                    name += chars[getRandomInt(chars.length)];
+                }
+            // ★ usedNames.has(name) を使うことで高速に重複チェック
+            } while(
+                usedNames.has(name) || 
+                reservedNames.has(name)
+            );
+            
+            usedNames.add(name); // ★確定した名前をSetに登録
+            return name;
+        }
+
+        function getWwmMName(name) {
+            // ★ 生成済みの名前であればそのまま返す
+            if (usedNames.has(name)) return name;
+            if (!renameMap.has(name)) renameMap.set(name, generateWwmMName());
+            return renameMap.get(name);
+        }
+
+        function createAlphabetString(value) {
+            const pool = [];
+            for (let i = 32; i < 127; i++) pool["push"](String["fromCharCode"](i));
+            for (const ch of value) {
+                if (!pool.includes(ch)) pool["push"](ch);
+            }
+            pool.sort(() => getRandomValue() - 0.5);
+            return pool.join('');
+        }
+
+        function createHiddenNumber(t, value) {
+            const r = getRandomInt(5);
+            if (r === 0) {
+                const key = getRandomInt(127) + 1;
+                return t.binaryExpression('^', t.numericLiteral(value ^ key), t.numericLiteral(key));
+            }
+            if (r === 1) {
+                const key = getRandomInt(255) + 1;
+                return t.binaryExpression('-', t.numericLiteral(value + key), t.numericLiteral(key));
+            }
+            if (r === 2) {
+                return t.unaryExpression('~', t.numericLiteral(~value));
+            }
+            if (r === 3) {
+                const shift = getRandomInt(3) + 1;
+                return t.binaryExpression('>>', t.numericLiteral(value << shift), t.numericLiteral(shift));
+            }
+            return t.binaryExpression('&', t.numericLiteral(value | 256), t.numericLiteral(255));
+        }
+
+        function createRuntimeNumberCode(value) {
+            const r = getRandomInt(6);
+            if (r === 0) {
+                const key = getRandomInt(127) + 1;
+                return `(${value ^ key}^${key})`;
+            }
+            if (r === 1) {
+                const key = getRandomInt(255) + 1;
+                return `(${value + key}-${key})`;
+            }
+            if (r === 2) return `(~${~value})`;
+            if (r === 3) {
+                const shift = getRandomInt(3) + 1;
+                return `((${value << shift})>>${shift})`;
+            }
+            if (r === 4) return `((${value | 256})&255)`;
+            return `(((${value + 17})-9)-8)`;
+        }
+
+        function createHiddenString(t, value) {
+            const alphabet = createAlphabetString(value);
+            const v_a = generateWwmMName(), v_b = generateWwmMName(), v_i = generateWwmMName();
+            return t.callExpression(
+                t.functionExpression(
+                    null,
+                    [t.identifier(v_a), t.identifier(v_b)],
+                    t.blockStatement([
+                        t.returnStatement(
+                            t.callExpression(
+                                t.memberExpression(
+                                    t.callExpression(
+                                        t.memberExpression(t.identifier(v_b), t.identifier('map')),
+                                        [t.functionExpression(null, [t.identifier(v_i)], t.blockStatement([t.returnStatement(t.memberExpression(t.identifier(v_a), t.identifier(v_i), true))]))]
+                                    ),
+                                    t.identifier('join')
+                                ),
+                                [t.stringLiteral('')]
+                            )
+                        )
+                    ])
+                ),
+                [
+                    t.stringLiteral(alphabet),
+                    t.arrayExpression(Array.from(value).map(ch => createHiddenNumber(t, alphabet.indexOf(ch))))
+                ]
+            );
+        }
+
+        function createHiddenMember(t, objectNode, propertyName) {
+            return t.memberExpression(objectNode, createHiddenString(t, propertyName), true);
+        }
+
+        function createRuntimeStringCode(value) {
+            const alphabet = createAlphabetString(value);
+            const indexes = Array.from(value).map(ch => createRuntimeNumberCode(alphabet.indexOf(ch))).join(',');
+            return `(function(a,b){return b.map(function(i){return a[i]}).join("")})(${JSON.stringify(alphabet)},[${indexes}])`;
+        }
+
+        // 最適化で消されにくい不透明述語
+        // 【修正後】メソッド呼び出しを全て t.stringLiteral(名前), true に変更
+        function createOpaqueTrue(t) {
+            const r = getRandomInt(4);
+            let expr;
+            if (r === 0) expr = t.binaryExpression('>', t.binaryExpression('+', t.callExpression(createHiddenMember(t, t.identifier(v_Date_name), 'now'), []), t.numericLiteral(1)), t.numericLiteral(0));
+            else if (r === 1) expr = t.binaryExpression('>', t.binaryExpression('+', t.callExpression(createHiddenMember(t, t.identifier(v_Math_name), 'random'), []), t.numericLiteral(1)), t.numericLiteral(0));
+            else if (r === 2) expr = t.binaryExpression('>', t.callExpression(createHiddenMember(t, t.newExpression(t.identifier(v_Date_name), []), 'getTime'), []), t.numericLiteral(0));
+            else {
+                expr = t.binaryExpression('>=',
+                    t.memberExpression(
+                        t.callExpression(
+                            createHiddenMember(t, t.identifier(v_Crypto_name), 'getRandomValues'),
+                            [t.newExpression(t.identifier('Uint8Array'), [t.numericLiteral(1)])]
+                        ),
+                        t.numericLiteral(0), true
+                    ),
+                    t.numericLiteral(0)
+                );
+            }
+            markObfuscated(expr);
+            return expr;
+        }
+
+        function createOpaqueZero(t) {
+            let expr = t.conditionalExpression(createOpaqueTrue(t), t.numericLiteral(0), t.numericLiteral(getRandomInt(1000) + 1));
+            markObfuscated(expr);
+            return expr;
+        }
+
+        // --- プラグイン ---
+        function RenamePlugin({ types: t }) {
+            return {
+                visitor: {
+                    Scopable(path) {
+                        Object.keys(path.scope.bindings).forEach(name => {
+                            if (!reservedNames.has(name)) path.scope.rename(name, getWwmMName(name));
+                        });
+                    }
+                }
+            };
+        }
+
+        function DeadCodeInjectionPlugin({ types: t }) {
+            return {
+                visitor: {
+                    ExpressionStatement(path) {
+                        if (!appConfig.deadCode) return;
+                        if (path.node._isObfuscated) return;
+                        if (path.parentPath.isProgram()) return;
+                        if (getRandomValue() * 100 > appConfig.deadCodePercent) return;
+                        
+                        // 不透明述語で本物の処理を囲み、実行されないダミーブロックを増やす
+                        let dummyStmts = [];
+                        let count = getRandomInt(2) + 1;
+                        for(let i = 0; i < count; i++) {
+                            let v = generateWwmMName();
+                            dummyStmts["push"](t.variableDeclaration("let", [t.variableDeclarator(t.identifier(v), t.numericLiteral(getRandomInt(10000)))]));
+                            if (getRandomValue() > 0.5) {
+                                dummyStmts["push"](t.expressionStatement(t.assignmentExpression("+=", t.identifier(v), t.numericLiteral(getRandomInt(1000)))));
+                            }
+                        }
+                        let dummyBlock = t.blockStatement(dummyStmts);
+                        let originalBlock = t.blockStatement([path.node]);
+                        
+                        let ifStmt = t.ifStatement(createOpaqueTrue(t), originalBlock, dummyBlock);
+                        markObfuscated(ifStmt);
+                        path.replaceWith(ifStmt);
+                        path.skip();
+                        
+                    }
+                }
+            };
+        }
+
+        function CFFPlugin({ types: t }) {
+            const v_ret = generateWwmMName();
+            const v_val = generateWwmMName();
+            const v_nextLocal = generateWwmMName();
+            const v_nextPrev = generateWwmMName();
+
+            return {
+                visitor: {
+                    BlockStatement: {
+                        exit(path) {
+                            if (!appConfig.cff) return;
+                            if (path.node._isObfuscated) return;
+                            if (path.node.body.length < 2) return; // 1文以下はスキップ
+                            
+                            // ★ 修正: NodePath を安全に取得して判定
+                            let funcParentPath = path.getFunctionParent();
+                            if (funcParentPath && (funcParentPath.node.async || funcParentPath.node.generator)) return;
+
+                            if (getRandomValue() * 100 > appConfig.cffPercent) return;
+                            
+                            let skip = false;
+                            path.traverse({
+                                Function(p) { p.skip(); }, 
+                                ForStatement(p) { p.skip(); },
+                                ForInStatement(p) { p.skip(); },
+                                ForOfStatement(p) { p.skip(); },
+                                DoWhileStatement(p) { p.skip(); },
+                                SwitchStatement(p) { p.skip(); },
+                                TryStatement(p) { p.skip(); },
+                                BreakStatement(p) { skip = true; p.stop(); },
+                                ContinueStatement(p) { skip = true; p.stop(); }
+                            });
+                            if (skip) return;
+
+                            let varDecls = [];
+                            path.get('body').forEach(stmtPath => {
+                                if (stmtPath.isFunctionDeclaration() && stmtPath.node.id) {
+                                    if (!varDecls.some(v => v.name === stmtPath.node.id.name)) varDecls["push"](stmtPath.node.id);
+                                    let expr = t.functionExpression(stmtPath.node.id, stmtPath.node.params, stmtPath.node.body, stmtPath.node.generator, stmtPath.node.async);
+                                    stmtPath.replaceWith(t.expressionStatement(t.assignmentExpression('=', stmtPath.node.id, expr)));
+                                }
+                            });
+
+                            // ★ 修正: 変数走査時も NodePath を使って安全に同階層のみを判定
+                            path.traverse({
+                                Function(p) { p.skip(); },
+                                ForStatement(p) { p.skip(); },
+                                ForInStatement(p) { p.skip(); },
+                                ForOfStatement(p) { p.skip(); },
+                                DoWhileStatement(p) { p.skip(); },
+                                SwitchStatement(p) { p.skip(); },
+                                TryStatement(p) { p.skip(); },
+                                VariableDeclaration(vPath) {
+                                    let targetParent = path.getFunctionParent() || path.findParent(p => p.isProgram());
+                                    let vParent = vPath.getFunctionParent() || vPath.findParent(p => p.isProgram());
+                                    if (!targetParent || !vParent || targetParent.node !== vParent.node) return;
+                                    
+                                    Object.values(vPath.getBindingIdentifiers()).forEach(idNode => {
+                                        if (!varDecls.some(id => id.name === idNode.name)) varDecls["push"](idNode);
+                                    });
+                                    if (vPath.parentPath.isForStatement() && vPath.parentKey === 'init') {
+                                        let exprs = vPath.node.declarations.map(decl => t.assignmentExpression('=', decl.id, decl.init || t.identifier('undefined')));
+                                        vPath.replaceWith(exprs["length"] === 1 ? exprs[0] : t.sequenceExpression(exprs));
+                                        return;
+                                    }
+                                    let exprs = [];
+                                    vPath.node.declarations.forEach(decl => {
+                                        if (decl.init) exprs["push"](t.expressionStatement(t.assignmentExpression('=', decl.id, decl.init)));
+                                    });
+                                    if (exprs["length"] > 0) vPath.replaceWithMultiple(exprs);
+                                    else vPath.remove();
+                                }
+                            });
+
+                            let states = [];
+                            function flatten(stmts, finalState) {
+                                if (stmts["length"] === 0) return finalState;
+                                let st = stmts[0], rest = stmts.slice(1);
+                                if (t.isIfStatement(st)) {
+                                    let afterIfState = flatten(rest, finalState);
+                                    let consState = flatten(t.isBlockStatement(st.consequent) ? st.consequent.body : [st.consequent], afterIfState);
+                                    let altState = st.alternate ? flatten(t.isBlockStatement(st.alternate) ? st.alternate.body : [st.alternate], afterIfState) : afterIfState;
+                                    let currentState = states["length"];
+                                    states["push"]({ type: 'if', test: st.test, cons: consState, alt: altState });
+                                    return currentState;
+                                } else if (t.isWhileStatement(st)) {
+                                    let afterWhileState = flatten(rest, finalState);
+                                    let condState = states["length"];
+                                    states["push"]({}); 
+                                    let bodyState = flatten(t.isBlockStatement(st.body) ? st.body.body : [st.body], condState);
+                                    states[condState] = { type: 'if', test: st.test, cons: bodyState, alt: afterWhileState };
+                                    return condState;
+                                } else if (t.isReturnStatement(st)) {
+                                    let currentState = states["length"];
+                                    states["push"]({ type: 'return', arg: st.argument });
+                                    return currentState;
+                                } else {
+                                    let nextState = flatten(rest, finalState);
+                                    let currentState = states["length"];
+                                    states["push"]({ type: 'normal', stmt: st, next: nextState });
+                                    return currentState;
+                                }
+                            }
+
+                            let startState = flatten(path.node.body, -1);
+                            if (states["length"] === 0) return;
+
+                            let originalStateCount = states["length"];
+                            if (appConfig.deadCode) {
+                                let dummyCount = Math.floor(originalStateCount * (appConfig.deadCodePercent / 100));
+                                for(let i = 0; i < dummyCount; i++) {
+                                    let dummyStmts = [];
+                                    let lines = getRandomInt(2) + 1;
+                                    for(let j=0; j<lines; j++) {
+                                        let v = generateWwmMName();
+                                        dummyStmts["push"](t.variableDeclaration("let", [t.variableDeclarator(t.identifier(v), t.numericLiteral(getRandomInt(1000)))]));
+                                        dummyStmts["push"](t.expressionStatement(t.assignmentExpression("=", t.identifier(v), t.numericLiteral(getRandomInt(100)))));
+                                    }
+                                    let dummyNext = getRandomInt(originalStateCount);
+                                    states["push"]({ type: 'normal', stmt: t.blockStatement(dummyStmts), next: dummyNext });
+                                }
+                            }
+
+                            let funcArrayElements = [];
+                            let shuffledIndices = states.map((_, i) => i).sort(() => getRandomValue() - 0.5);
+                            let expectedVals = states.map(() => getRandomInt(0xFFFFFF));
+                            let exitExpected = getRandomInt(0xFFFFFF);
+                            let getExpected = (origIdx) => origIdx === -1 ? exitExpected : expectedVals[origIdx];
+                            let getShuffled = (origIdx) => origIdx === -1 ? -1 : shuffledIndices["indexOf"](origIdx);
+                            
+                            states.forEach((s, idx) => {
+                                let shuffledIdx = shuffledIndices["indexOf"](idx);
+                                let v_prev_id = path.scope.generateUidIdentifier(generateWwmMName());
+                                
+                                // ★ この関数(ステート)に渡されるべき期待値（前の関数からの返り値）
+                                let expectedInput = getExpected(idx);
+
+                                let createTransitionObj = (targetShuffledExpr, expectedNextInputExpr) => {
+                                    // ★ 前の関数からの出力 (v_prev_id) と自らの期待入力 (expectedInput) を XOR 演算して計算。
+                                    // 万が一前の関数から正しい値が返ってきていない場合、次のインデックスが崩壊してエラーになります。
+                                    let nextLocalExpr = t.binaryExpression('^', 
+                                        t.binaryExpression('^', targetShuffledExpr, t.numericLiteral(expectedInput)), 
+                                        v_prev_id
+                                    );
+                                    
+                                    return t.objectExpression([
+                                        t.objectProperty(t.stringLiteral(v_ret), t.booleanLiteral(false)),
+                                        t.objectProperty(t.stringLiteral(v_nextLocal), nextLocalExpr),
+                                        t.objectProperty(t.stringLiteral(v_nextPrev), expectedNextInputExpr)
+                                    ]);
+                                };
+
+                                let funcBody;
+                                if (s.type === 'normal') {
+                                    let retNext = createTransitionObj(t.numericLiteral(getShuffled(s.next)), t.numericLiteral(getExpected(s.next)));
+                                    if (t.isExpressionStatement(s.stmt)) {
+                                        funcBody = [t.returnStatement(t.sequenceExpression([s.stmt.expression, retNext]))];
+                                    } else {
+                                        funcBody = [s.stmt, t.returnStatement(retNext)];
+                                    }
+                                } else if (s.type === 'if') {
+                                    let targetExpr = t.conditionalExpression(s.test, t.numericLiteral(getShuffled(s.cons)), t.numericLiteral(getShuffled(s.alt)));
+                                    let expectedExpr = t.conditionalExpression(s.test, t.numericLiteral(getExpected(s.cons)), t.numericLiteral(getExpected(s.alt)));
+                                    funcBody = [t.returnStatement(createTransitionObj(targetExpr, expectedExpr))];
+                                } else if (s.type === 'return') {
+                                    funcBody = [t.returnStatement(t.objectExpression([
+                                        t.objectProperty(t.stringLiteral(v_ret), t.booleanLiteral(true)),
+                                        t.objectProperty(t.stringLiteral(v_val), s.arg || t.unaryExpression("void", t.numericLiteral(0)))
+                                    ]))];
+                                }
+                                funcArrayElements[shuffledIdx] = t.arrowFunctionExpression([v_prev_id], t.blockStatement(funcBody));
+                            });
+
+                            let firstIndex = shuffledIndices["indexOf"](startState);
+                            let finalBody = [];
+                            if (varDecls["length"] > 0) finalBody["push"](t.variableDeclaration("var", varDecls.map(id => t.variableDeclarator(id))));
+
+                            const funcsArrayName = path.scope.generateUidIdentifier(generateWwmMName());
+                            const nextVarName = path.scope.generateUidIdentifier(generateWwmMName());
+                            const prevOutName = path.scope.generateUidIdentifier(generateWwmMName());
+                            const resVarName = path.scope.generateUidIdentifier(generateWwmMName());
+
+                            // 関数配列
+                            finalBody["push"](t.variableDeclaration("const", [t.variableDeclarator(funcsArrayName, t.arrayExpression(funcArrayElements))]));
+                            finalBody["push"](t.variableDeclaration("let", [t.variableDeclarator(nextVarName, t.numericLiteral(firstIndex))]));
+                            finalBody["push"](t.variableDeclaration("let", [t.variableDeclarator(prevOutName, t.numericLiteral(getExpected(startState)))]));
+
+                            // トランポリンループ内部
+                            let whileLoopBody = t.blockStatement([
+                                t.variableDeclaration("let", [t.variableDeclarator(resVarName, t.callExpression(t.memberExpression(funcsArrayName, nextVarName, true), [prevOutName]))]),
+                                t.ifStatement(
+                                    t.logicalExpression("&&", resVarName, t.memberExpression(resVarName, t.stringLiteral(v_ret), true)),
+                                    t.returnStatement(t.memberExpression(resVarName, t.stringLiteral(v_val), true))
+                                ),
+                                // 計算は関数内部で済んでいるので、そのまま受け取る
+                                t.expressionStatement(t.assignmentExpression("=", nextVarName, t.memberExpression(resVarName, t.stringLiteral(v_nextLocal), true))),
+                                t.expressionStatement(t.assignmentExpression("=", prevOutName, t.memberExpression(resVarName, t.stringLiteral(v_nextPrev), true)))
+                            ]);
+
+                            finalBody["push"](t.whileStatement(
+                                t.logicalExpression('&&', t.binaryExpression("!==", nextVarName, t.numericLiteral(-1)), createOpaqueTrue(t)),
+                                whileLoopBody
+                            ));
+
+                            let newBlock = t.blockStatement(finalBody);
+                            markObfuscated(newBlock);
+                            path.replaceWith(newBlock);
+                        }
+                    }
+                }
+            };
+        }
+
+        function StringObfuscationPlugin({ types: t }) {
+            return {
+                visitor: {
+                    ObjectProperty(path) {
+                        if (path.node._isObfuscated) return;
+                        if (path.node.key.type === 'Identifier' && !path.node.computed) {
+                            path.replaceWith(t.objectProperty(t.stringLiteral(path.node.key.name), path.node.value, true));
+                        }
+                    },
+                    MemberExpression(path) {
+                        if (path.node._isObfuscated) return;
+                        if (path.node.property.type === 'Identifier' && !path.node.computed) {
+                            path.replaceWith(t.memberExpression(path.node.object, t.stringLiteral(path.node.property.name), true));
+                        }
+                    },
+                    Program: {
+                        exit(path) {
+                            if (!appConfig.stringArray && !appConfig.stringEncoding) return;
+                            
+                            const v_t = generateWwmMName(), v_p = generateWwmMName();
+                            const v_fake = generateWwmMName(), v_hookDetect = generateWwmMName();
+
+                            const v_env = generateWwmMName();
+                            let envCheckCode = `let ${v_env} = 0; `;
+                            if (appConfig.envBinding) envCheckCode += `try{if(typeof navigator!=="undefined"&&navigator.webdriver)${v_env}|=1;}catch(e){} `;
+                            if (appConfig.selfDefending) envCheckCode += `try{if(Function.prototype[${createRuntimeStringCode('toString')}].call(Object)[${createRuntimeStringCode('indexOf')}](atob("W25hdGl2ZSBjb2RlXQ=="))===-1)${v_env}|=2;}catch(e){} `;
+
+                            // ★ 各バリアントごとの独立したデコード処理を生成するヘルパー関数
+                            function buildDecoderBody(cfg, v_encodedVar) {
+                                const v_charset = generateWwmMName(), v_val = generateWwmMName(), v_zeros = generateWwmMName();
+                                const v_bytes = generateWwmMName(), v_res = generateWwmMName(), v_i = generateWwmMName(), v_b = generateWwmMName();
+                                const v_decBytes = generateWwmMName(), v_i_dec = generateWwmMName(), v_c = generateWwmMName();
+                                const v_low = generateWwmMName(), v_high = generateWwmMName(), v_decodedStr = generateWwmMName();
+
+                                return `
+                                    const ${v_charset} = atob("${cfg.b64Charset}");
+                                    let ${v_val} = 0n, ${v_zeros} = 0;
+                                    while(${v_zeros} < ${v_encodedVar}["length"] && ${v_encodedVar}[${v_zeros}] === ${v_charset}[0]) ${v_zeros}++;
+                                    for (let ${v_i} = ${v_zeros}; ${v_i} < ${v_encodedVar}["length"]; ${v_i}++) {
+                                        ${v_val} = (${v_val} * ${cfg.radix}n) + BigInt(${v_charset}["indexOf"](${v_encodedVar}[${v_i}]));
+                                    }
+                                    let ${v_bytes} = [];
+                                    while (${v_val} > 0n) { ${v_bytes}["unshift"](Number(${v_val} % 256n)); ${v_val} /= 256n; }
+                                    let ${v_res} = [];
+                                    for(let ${v_i}=0; ${v_i}<${v_zeros}; ${v_i}++) ${v_res}["push"](0);
+                                    ${v_res}["push"](...${v_bytes});
+
+                                    let ${v_decBytes} = ${v_res}["slice"]();
+                                    ${cfg.shuffle === 0 ? `for (let ${v_i}=0; ${v_i}<${v_decBytes}["length"]-1; ${v_i}+=2) { let ${v_b}=${v_decBytes}[${v_i}]; ${v_decBytes}[${v_i}]=${v_decBytes}[${v_i}+1]; ${v_decBytes}[${v_i}+1]=${v_b}; }` : ''}
+                                    ${cfg.shuffle === 1 ? `${v_decBytes}["reverse"]();` : ''}
+                                    ${cfg.shuffle === 2 ? `if (${v_decBytes}["length"] > 1) ${v_decBytes}["unshift"](${v_decBytes}["pop"]());` : ''}
+                                    for (let ${v_i}=0; ${v_i}<${v_decBytes}["length"]; ${v_i}++) {
+                                        let ${v_b} = ${v_decBytes}[${v_i}];
+                                        ${cfg.byteOp === 0 ? `${v_decBytes}[${v_i}] = ${v_wasmXor_name}(${v_b}, ${cfg.xor}, ${v_env});` : ''}
+                                        ${cfg.byteOp === 1 ? `${v_decBytes}[${v_i}] = (${v_wasmXor_name}(${v_b}, ${cfg.xor}, ${v_env}) - ${cfg.add}) & 255;` : ''}
+                                        ${cfg.byteOp === 2 ? `${v_b} = ((${v_b} >>> ${cfg.rotate}) | (${v_b} << ${8 - cfg.rotate})) & 255; ${v_decBytes}[${v_i}] = ${v_wasmXor_name}(${v_b}, ${cfg.xor}, ${v_env});` : ''}
+                                        ${cfg.byteOp === 3 ? `${v_decBytes}[${v_i}] = (~${v_wasmXor_name}(${v_b}, ${cfg.xor}, ${v_env})) & 255;` : ''}
+                                    }
+                                    let ${v_i_dec} = 0;
+                                    let ${v_decodedStr} = "";
+                                    ${cfg.mode === 'utf8' ? `
+                                    while (${v_i_dec} < ${v_decBytes}["length"]) {
+                                        let ${v_c} = ${v_decBytes}[${v_i_dec}++];
+                                        if (${v_c} < 128) ${v_decodedStr} += String[${createRuntimeStringCode('fromCharCode')}](${v_c});
+                                        else if (${v_c} > 191 && ${v_c} < 224) ${v_decodedStr} += String[${createRuntimeStringCode('fromCharCode')}](((${v_c} & 31) << 6) | (${v_decBytes}[${v_i_dec}++] & 63));
+                                        else ${v_decodedStr} += String[${createRuntimeStringCode('fromCharCode')}](((${v_c} & 15) << 12) | ((${v_decBytes}[${v_i_dec}++] & 63) << 6) | (${v_decBytes}[${v_i_dec}++] & 63));
+                                    }
+                                    ` : `
+                                    while (${v_i_dec} < ${v_decBytes}["length"]) {
+                                        let ${v_low} = ${v_decBytes}[${v_i_dec}++];
+                                        let ${v_high} = ${v_decBytes}[${v_i_dec}++] || 0;
+                                        ${v_decodedStr} += String[${createRuntimeStringCode('fromCharCode')}](${v_low} | (${v_high} << 8));
+                                    }
+                                    `}
+                                    return ${v_decodedStr};
+                                `;
+                            }
+
+                            if (appConfig.stringArray) {
+                                if (rawStringArray["length"] === 0) return;
+                                let indices = rawStringArray.map((_, i) => i).sort(() => getRandomValue() - 0.5);
+                                let finalStringArray = [], oldToNew = {};
+
+                                for (let i = 0; i < indices["length"]; i++) {
+                                    let oldIdx = indices[i];
+                                    finalStringArray["push"](rawStringArray[oldIdx].encoded);
+                                    oldToNew[oldIdx] = i;
+                                }
+
+                                path.traverse({
+                                    StringLiteral(p) {
+                                        if (p.node.value && typeof p.node.value === 'string' && p.node.value.startsWith("__IDX_")) {
+                                            let oldIdx = parseInt(p.node.value.substring(6));
+                                            if (!isNaN(oldIdx) && oldToNew[oldIdx] !== undefined) {
+                                                let newIdx = oldToNew[oldIdx];
+                                                // ★ エンコードされている方式（type）に対応した個別のプロキシ/関数を呼び出す
+                                                let typeIdx = rawStringArray[oldIdx].type;
+                                                let targetProxy = appConfig.stringEncoding ? proxyNames[typeIdx] : proxyNames[0];
+
+                                                let callNode;
+                                                if (appConfig.proxyHook) {
+                                                    callNode = t.memberExpression(t.identifier(targetProxy), t.numericLiteral(newIdx), true);
+                                                } else {
+                                                    callNode = t.callExpression(t.identifier(targetProxy), [t.numericLiteral(newIdx)]);
+                                                }
+                                                markObfuscated(callNode);
+                                                p.replaceWith(callNode);
+                                                p.skip();
+                                            }
+                                        }
+                                    }
+                                });
+                                
+                                let decoderAstCode = `let ${stringArrayName} = ${JSON.stringify(finalStringArray)};\n${envCheckCode}\n`;
+
+                                if (appConfig.stringEncoding) {
+                                    // ★ バリアントの数だけ、完全に独立した関数（またはProxy）をそれぞれ生成する
+                                    decodeConfigs.forEach((cfg, idx) => {
+                                        const v_cache = generateWwmMName(), v_encoded = generateWwmMName(), v_p_local = generateWwmMName();
+                                        if (appConfig.proxyHook) {
+                                            decoderAstCode += `
+                                                const ${v_cache} = {};
+                                                const ${proxyNames[idx]} = new Proxy(${stringArrayName}, {
+                                                    get(${v_t}, ${v_p_local}) {
+                                                        try { if (Function.prototype[${createRuntimeStringCode('toString')}].call(Proxy)[${createRuntimeStringCode('indexOf')}](atob("W25hdGl2ZSBjb2RlXQ==")) === -1) return "${v_hookDetect}"; } catch(e) { return "${v_hookDetect}"; }
+                                                        try { if (typeof ${v_Crypto_name} === 'undefined' || !${v_Crypto_name}[${createRuntimeStringCode('getRandomValues')}]) return "${v_hookDetect}"; } catch(e2) {}
+                                                        if (${v_p_local} === 'length') return ${v_t}["length"];
+                                                        if (typeof ${v_p_local} === 'symbol') return ${v_t}[${v_p_local}];
+                                                        if (${v_cache}[${v_p_local}]) return ${v_cache}[${v_p_local}];
+                                                        const ${v_encoded} = ${v_t}[${v_p_local}];
+                                                        if (!${v_encoded}) return undefined;
+                                                        try { if (${v_Date_name}[${createRuntimeStringCode('now')}]() < 0 || ${v_Crypto_name}[${createRuntimeStringCode('getRandomValues')}](new Uint8Array(1))[0] > 256) return "${v_fake}"; } catch(e3) {}
+                                                        
+                                                        ${buildDecoderBody(cfg, v_encoded).replace(/return\s+([a-zA-Z0-9_$]+);/, `${v_cache}[${v_p_local}] = $1; return $1;`)}
+                                                    }
+                                                });
+                                            `;
+                                        } else {
+                                            decoderAstCode += `
+                                                const ${v_cache} = {};
+                                                function ${proxyNames[idx]}(${v_p_local}) {
+                                                    if (${v_cache}[${v_p_local}]) return ${v_cache}[${v_p_local}];
+                                                    const ${v_encoded} = ${stringArrayName}[${v_p_local}];
+                                                    if (!${v_encoded}) return undefined;
+                                                    try { if (${v_Date_name}[${createRuntimeStringCode('now')}]() < 0 || ${v_Crypto_name}[${createRuntimeStringCode('getRandomValues')}](new Uint8Array(1))[0] > 256) return "${v_fake}"; } catch(e3) {}
+                                                    
+                                                    ${buildDecoderBody(cfg, v_encoded).replace(/return\s+([a-zA-Z0-9_$]+);/, `${v_cache}[${v_p_local}] = $1; return $1;`)}
+                                                }
+                                            `;
+                                        }
+                                    });
+                                } else {
+                                    // Encodingなしの場合はそのまま1つのデコーダー関数
+                                    if (appConfig.proxyHook) {
+                                        decoderAstCode += `
+                                            const ${proxyNames[0]} = new Proxy(${stringArrayName}, {
+                                                get(${v_t}, ${v_p}) {
+                                                    try { if (Function.prototype[${createRuntimeStringCode('toString')}].call(Proxy)[${createRuntimeStringCode('indexOf')}](atob("W25hdGl2ZSBjb2RlXQ==")) === -1) return "${v_fake}"; } catch(e) { return "${v_fake}"; }
+                                                    try { if (typeof ${v_Crypto_name} === 'undefined' || !${v_Crypto_name}[${createRuntimeStringCode('getRandomValues')}]) return "${v_fake}"; } catch(e2) {}
+                                                    try { if (${v_Date_name}[${createRuntimeStringCode('now')}]() < 0 || ${v_Crypto_name}[${createRuntimeStringCode('getRandomValues')}](new Uint8Array(1))[0] > 256) return "${v_fake}"; } catch(e3) {}
+                                                    if (${v_p} === 'length') return ${v_t}["length"];
+                                                    if (typeof ${v_p} === 'symbol') return ${v_t}[${v_p}];
+                                                    return ${v_t}[${v_p}];
+                                                }
+                                            });
+                                        `;
+                                    } else {
+                                        decoderAstCode += `
+                                            function ${proxyNames[0]}(${v_p}) { return ${stringArrayName}[${v_p}]; }
+                                        `;
+                                    }
+                                }
+
+                                const decoderAst = Babel.transform(decoderAstCode, { ast: true, code: false }).ast.program.body;
+                                decoderAst.reverse().forEach(node => {
+                                    markObfuscated(node);
+                                    path["unshiftContainer"]('body', node);
+                                });
+
+                            } else {
+                                // Inline Decode Mode (No String Array)
+                                let decoderAstCode = `${envCheckCode}\n`;
+                                decodeConfigs.forEach((cfg, idx) => {
+                                    const v_cache = generateWwmMName(), v_encoded = generateWwmMName();
+                                    decoderAstCode += `
+                                        const ${v_cache} = {};
+                                        function ${proxyNames[idx]}(${v_encoded}) {
+                                            if (${v_cache}[${v_encoded}]) return ${v_cache}[${v_encoded}];
+                                            try { if (typeof ${v_Crypto_name} === 'undefined' || !${v_Crypto_name}[${createRuntimeStringCode('getRandomValues')}]) return "${v_fake}"; } catch(e2) {}
+                                            try { if (${v_Date_name}[${createRuntimeStringCode('now')}]() < 0 || ${v_Crypto_name}[${createRuntimeStringCode('getRandomValues')}](new Uint8Array(1))[0] > 256) return "${v_fake}"; } catch(e3) {}
+                                            
+                                            ${buildDecoderBody(cfg, v_encoded).replace(/return\s+([a-zA-Z0-9_$]+);/, `${v_cache}[${v_encoded}] = $1; return $1;`)}
+                                        }
+                                    `;
+                                });
+                                const decoderAst = Babel.transform(decoderAstCode, { ast: true, code: false }).ast.program.body;
+                                decoderAst.reverse().forEach(node => {
+                                    markObfuscated(node);
+                                    path["unshiftContainer"]('body', node);
+                                });
+                            }
+                        }
+                    },
+                    StringLiteral(path) {
+                        if (path.parent.type === 'DirectiveLiteral' || path.parent.type === 'ImportDeclaration') return;
+                        if (path.parentPath.isExpressionStatement() && path.parentPath.parentPath.isProgram()) return;
+                        if (path.node.value === "") return;
+                        if (path.node._isObfuscated) return;
+                        if (path.node.value.startsWith("__IDX_")) return;
+                        if (path.parentPath.isObjectProperty() && path.parentPath.node.key === path.node) path.parentPath.node.computed = true;
+
+                        const str = path.node.value;
+                        const chunks = [];
+                        if (appConfig.stringChunks) {
+                            for(let i = 0; i < str["length"]; i += appConfig.chunkSize) chunks["push"](str.slice(i, i + appConfig.chunkSize));
+                        } else {
+                            chunks["push"](str);
+                        }
+
+                        const arrayElements = chunks.map(chunk => {
+                            let finalStr = chunk;
+                            let type = 0;
+
+                            if (appConfig.stringEncoding) {
+                                type = getRandomInt(decodeConfigs["length"]);
+                                const cfg = decodeConfigs[type];
+                                let bytes = [];
+                                if (cfg.mode === 'utf8') {
+                                    for(let i=0; i<chunk["length"]; i++) {
+                                        let c = chunk["charCodeAt"](i);
+                                        if (c < 128) bytes["push"](c);
+                                        else if (c < 2048) bytes["push"]((c >> 6) | 192, (c & 63) | 128);
+                                        else bytes["push"]((c >> 12) | 224, ((c >> 6) & 63) | 128, (c & 63) | 128);
+                                    }
+                                } else {
+                                    for(let i=0; i<chunk["length"]; i++) {
+                                        let c = chunk["charCodeAt"](i);
+                                        bytes["push"](c & 255);
+                                        bytes["push"]((c >> 8) & 255);
+                                    }
+                                }
+                                let out = Array.from(bytes);
+                                for(let i=0; i<out["length"]; i++) {
+                                    if (cfg.byteOp === 0) out[i] = out[i] ^ cfg.xor;
+                                    else if (cfg.byteOp === 1) out[i] = ((out[i] + cfg.add) & 255) ^ cfg.xor;
+                                    else if (cfg.byteOp === 2) out[i] = rotateByteLeft(out[i] ^ cfg.xor, cfg.rotate);
+                                    else out[i] = ((~out[i]) & 255) ^ cfg.xor;
+                                }
+                                if (cfg.shuffle === 0) {
+                                    for(let i=0; i<out["length"] - 1; i+=2) { let tmp = out[i]; out[i] = out[i+1]; out[i+1] = tmp; }
+                                }
+                                else if (cfg.shuffle === 1) out["reverse"]();
+                                else if (cfg.shuffle === 2 && out["length"] > 1) out["push"](out["shift"]());
+                                let value = 0n;
+                                for (let i = 0; i < out["length"]; i++) value = (value * 256n) + BigInt(out[i]);
+                                let res = "";
+                                if (value > 0n) {
+                                    while (value > 0n) { res = cfg.charset[Number(value % cfg.radix)] + res; value /= cfg.radix; }
+                                }
+                                let leadingZeros = 0;
+                                while(leadingZeros < out["length"] && out[leadingZeros] === 0) leadingZeros++;
+                                finalStr = cfg.charset[0].repeat(leadingZeros) + res;
+                            }
+
+                            if (appConfig.stringArray) {
+                                const index = rawStringArray["length"];
+                                rawStringArray["push"]({ type: type, encoded: finalStr });
+                                let memNode = t.stringLiteral("__IDX_" + index);
+                                memNode._isObfuscated = true;
+                                return memNode;
+                            } else {
+                                if (appConfig.stringEncoding) {
+                                    // ★ 引数から type 指定を削除し、対象の関数を直接呼び出す
+                                    let callNode = t.callExpression(t.identifier(proxyNames[type]), [t.stringLiteral(finalStr)]);
+                                    markObfuscated(callNode);
+                                    return callNode;
+                                } else {
+                                    let strNode = t.stringLiteral(finalStr);
+                                    markObfuscated(strNode);
+                                    return strNode;
+                                }
+                            }
+                        });
+
+                        let replacement;
+                        if (arrayElements["length"] === 1) {
+                            replacement = arrayElements[0];
+                        } else {
+                            replacement = t.callExpression(
+                            t.memberExpression(t.arrayExpression(arrayElements), t.stringLiteral('join'), true),
+                            [t.stringLiteral("")]
+                        );
+                            markObfuscated(replacement);
+                        }
+                        path.replaceWith(replacement);
+                        path.skip();
+                    }
+                }
+            };
+        }
+
+        function NumberObfuscationPlugin({ types: t }) {
+            return {
+                visitor: {
+                    NumericLiteral(path) {
+                        if (path.node._isObfuscated) return;
+                        const val = path.node.value;
+                        if (!Number.isSafeInteger(val) || val < 0 || val > 0xFFFFFFF) return;
+                        if (path.parentPath.isObjectProperty() && path.parentPath.node.key === path.node) path.parentPath.node.computed = true;
+                        
+                        const r = getRandomInt(4);
+                        const key = getRandomInt(0xFFFFFF) + 1;
+                        let expr;
+                        let opqZ = (appConfig.opaqueZero && getRandomValue() * 100 <= appConfig.opaqueZeroPercent) ? createOpaqueZero(t) : t.numericLiteral(0);
+
+                        if (r === 0) expr = t.binaryExpression('^', t.numericLiteral(val ^ key), t.binaryExpression('+', t.numericLiteral(key), opqZ));
+                        else if (r === 1) expr = t.binaryExpression('-', t.numericLiteral(val + key), t.binaryExpression('+', t.numericLiteral(key), opqZ));
+                        else if (r === 2) expr = t.binaryExpression('^', t.numericLiteral(val ^ (~key)), t.unaryExpression('~', t.binaryExpression('+', t.numericLiteral(key), opqZ)));
+                        else expr = t.binaryExpression('|', t.numericLiteral(val), opqZ);
+                        
+                        if(expr) {
+                            markObfuscated(expr);
+                            path.replaceWith(expr);
+                            path.skip(); 
+                        }
+                    }
+                }
+            };
+        }
+
+        // --- 実行処理 ---
+        function setProgress(percent, label) {
+            document.getElementById('progressPercent').textContent = percent + '%';
+            document.getElementById('progressLabel').textContent = label;
+        }
+
+        function runObfuscationWorker(code, config) {
+            return new Promise((resolve, reject) => {
+                const coreStart = TOOL_SOURCE.indexOf('let appConfig = {};');
+                const coreEnd = TOOL_SOURCE.indexOf('function setProgress');
+                const coreSource = TOOL_SOURCE.slice(coreStart, coreEnd);
+                const workerSource = buildWorkerSource(coreSource);
+                const workerUrl = URL.createObjectURL(new Blob([workerSource], { type: 'application/javascript' }));
+                const worker = new Worker(workerUrl);
+                worker.onmessage = (event) => {
+                    const data = event.data;
+                    if (data.type === 'progress') setProgress(data.percent, data.label);
+                    else if (data.type === 'done') {
+                        worker.terminate();
+                        URL.revokeObjectURL(workerUrl);
+                        resolve(data.output);
+                    } else if (data.type === 'error') {
+                        worker.terminate();
+                        URL.revokeObjectURL(workerUrl);
+                        reject(new Error(data.message));
+                    }
+                };
+                worker.onerror = (error) => {
+                    worker.terminate();
+                    URL.revokeObjectURL(workerUrl);
+                    reject(new Error(error.message || 'Worker failed'));
+                };
+                worker.postMessage({ code, config });
+            });
+        }
+
+        function buildWorkerSource(coreSource) {
+            return `
+importScripts('https://unpkg.com/@babel/standalone/babel.min.js');
+importScripts('https://cdn.jsdelivr.net/npm/terser/dist/bundle.min.js');
+${coreSource}
+function progress(percent, label) { self.postMessage({ type: 'progress', percent, label }); }
+function generateWasmXorModule() {
+    return "AGFzbQEAAAABCAFgA39/fwF/AwIBAAcFAQF4AAAKEAEOACAAIAFzIAJB+wFscws=";
+}
+function fragmentRuntimeSource(source, chunkCount) {
+    if (chunkCount > source.length) chunkCount = source.length || 1;
+    const chunks = [];
+    const baseSize = Math.floor(source.length / chunkCount);
+    let offset = 0;
+    for (let i = 0; i < chunkCount; i++) {
+        let size = (i === chunkCount - 1) ? source.length - offset : baseSize;
+        if (size > 0) chunks.push(source.slice(offset, offset + size));
+        offset += size;
+    }
+    const seed = getRandomInt(0xFFFFFFFF) >>> 0;
+    const order = createShuffleOrder(chunks.length, seed);
+    const shuffled = order.map(i => chunks[i]);
+    
+    // ★修正: var j=((s^(s>>>16))>>>0)%a.length, k=((s^i)>>>0)%a.length へ変更
+    return '(function(a,q){for(var o=[],i=0;i<a.length;i++)o[i]=i;var s=q;if(s===0)s=1;for(i=0;i<a.length;i++){s=Math.imul(s,2654435761)>>>0;var j=((s^(s>>>16))>>>0)%a.length,k=((s^i)>>>0)%a.length,t=o[j];o[j]=o[k];o[k]=t}for(var str=\"\",e=[],i=0;i<o.length;i++)e[o[i]]=a[i];for(i=0;i<e.length;i++)str+=e[i];import(\"data:text/javascript;charset=utf-8;base64,\"+btoa(unescape(encodeURIComponent(str))))})(' + JSON.stringify(shuffled) + ',' + seed + '>>>0);';
+}
+const yieldToEventLoop = () => new Promise(resolve => setTimeout(resolve, 15));
+async function runObfuscation(code, config) {
+    appConfig = config;
+    renameMap.clear(); usedNames.clear(); rawStringArray = [];
+    stringArrayName = generateWwmMName(); proxyNames = [];
+    v_Date_name = generateWwmMName(); v_Math_name = generateWwmMName();
+    v_Crypto_name = generateWwmMName(); v_wasmXor_name = generateWwmMName();
+    decodeConfigs = [];
+
+    progress(5, 'Preparing decoder variants');
+    await yieldToEventLoop();
+
+    for (let i = 0; i < appConfig.decoderVariants; i++) {
+        proxyNames.push(generateWwmMName());
+        let charsetPool = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!#$%&()*+,-./:;<=>?@[]^_{|}~".split('');
+        charsetPool.sort(() => getRandomValue() - 0.5);
+        let radix = getRandomInt(29) + 62;
+        decodeConfigs["push"]({
+            xor: getRandomInt(255) + 1, add: getRandomInt(255) + 1,
+            rotate: getRandomInt(7) + 1, byteOp: i % 4,
+            mode: getRandomValue() > 0.5 ? 'utf8' : 'utf16',
+            shuffle: i % 3, radix: BigInt(radix),
+            charset: charsetPool.slice(0, radix).join(''),
+            b64Charset: btoa(charsetPool.slice(0, radix).join(''))
+        });
+    }
+
+    // --- ここからプラグイン適用を細かく分割してメモリ肥大化を防ぐ ---
+    let currentCode = code;
+
+    progress(15, 'Phase 1: Renaming variables');
+    let res1 = Babel.transform(currentCode, { plugins: [RenamePlugin] });
+    currentCode = res1.code;
+    await yieldToEventLoop();
+
+    if (appConfig.deadCode) {
+        progress(25, 'Phase 2: Dead Code Injection');
+        let res2 = Babel.transform(currentCode, { plugins: [DeadCodeInjectionPlugin] });
+        currentCode = res2.code;
+        await yieldToEventLoop();
+    }
+
+    if (appConfig.cff) {
+        progress(35, 'Phase 3: Control Flow Flattening');
+        let res3 = Babel.transform(currentCode, { plugins: [CFFPlugin] });
+        currentCode = res3.code;
+        await yieldToEventLoop();
+    }
+
+    progress(50, 'Phase 4: String Encoding & Array');
+    let res4 = Babel.transform(currentCode, { plugins: [StringObfuscationPlugin] });
+    currentCode = res4.code;
+    await yieldToEventLoop();
+
+    progress(65, 'Phase 5: Bootstrap & Numbers');
+    const wasmB64 = generateWasmXorModule();
+    const v_wasmB64 = generateWwmMName(), v_wasmMod = generateWwmMName(), v_wasmInst = generateWwmMName();
+    let bootstrapCode = [
+        'var ' + v_Date_name + ' = Date;',
+        'var ' + v_Math_name + ' = Math;',
+        'var ' + v_Crypto_name + ' = window[atob("Y3J5cHRv")];',
+        'var ' + v_wasmB64 + ' = "' + wasmB64 + '";',
+        'var ' + v_wasmMod + ' = new WebAssembly["Module"](Uint8Array["from"](atob(' + v_wasmB64 + '), function(c) { return c["charCodeAt"](0); }));',
+        'var ' + v_wasmInst + ' = new WebAssembly["Instance"](' + v_wasmMod + ');',
+        'var ' + v_wasmXor_name + ' = ' + v_wasmInst + '["exports"]["x"];'
+    ].join('\\n') + '\\n';
+
+    let res5 = Babel.transform(bootstrapCode + currentCode, { plugins: [NumberObfuscationPlugin] });
+    currentCode = res5.code;
+    await yieldToEventLoop();
+
+    progress(80, 'Minifying output');
+    const terserResult = await Terser.minify(currentCode, {
+        mangle: false,
+        compress: { dead_code: false, drop_console: false, evaluate: false, inline: false, loops: false, reduce_vars: false, sequences: true, passes: 2, properties: false, computed_props: false },
+        output: { beautify: false, keep_quoted_props: true }
+    });
+    if (!terserResult.code) throw new Error('Terser returned empty output');
+    await yieldToEventLoop();
+
+    progress(95, appConfig.packer ? 'Packing final payload' : 'Finalizing output');
+    const launchCode = appConfig.fragmentedLaunch ? fragmentRuntimeSource(terserResult.code, appConfig.fragmentChunks) : terserResult.code;
+    return appConfig.packer ? packUtf8Rc4ShuffleBase122(launchCode) : launchCode;
+}
+self.onmessage = async (event) => {
+    try {
+        const output = await runObfuscation(event.data.code, event.data.config);
+        progress(100, 'Complete');
+        self.postMessage({ type: 'done', output });
+    } catch (error) {
+        self.postMessage({ type: 'error', message: error && error.message ? error.message : String(error) });
+    }
+};`;
+        }
+
+        document.getElementById('obfuscateBtn').addEventListener('click', async () => {
+            const btn = document.getElementById('obfuscateBtn');
+            const code = inputEditor.getValue();
+            const statsLabel = document.getElementById('statsLabel');
+            const loadingOverlay = document.getElementById('loadingOverlay'); // 追加
+            
+            appConfig = {
+                stringArray: document.getElementById('chkStringArray').checked,
+                stringEncoding: document.getElementById('chkStringEncoding').checked,
+                stringChunks: document.getElementById('chkStringChunks').checked,
+                selfDefending: document.getElementById('chkSelfDefending').checked,
+                proxyHook: document.getElementById('chkProxyHook').checked,
+                packer: document.getElementById('chkPacker').checked,
+                envBinding: document.getElementById('chkEnvBinding').checked,
+                integrityCheck: document.getElementById('chkIntegrityCheck').checked,
+                distributedWatchers: document.getElementById('chkDistributedWatchers').checked,
+                fragmentedLaunch: document.getElementById('chkFragmentedLaunch').checked,
+                fragmentChunks: parseInt(document.getElementById('rangeFragmentChunks').value, 10),
+                cff: document.getElementById('chkCFF').checked,
+                cffPercent: parseInt(document.getElementById('rangeCFF').value, 10),
+                deadCode: document.getElementById('chkDeadCode').checked,
+                deadCodePercent: parseInt(document.getElementById('rangeDeadCode').value, 10),
+                opaqueZero: document.getElementById('chkOpaqueZero').checked,
+                opaqueZeroPercent: parseInt(document.getElementById('rangeOpaqueZero').value, 10),
+                chunkSize: parseInt(document.getElementById('rangeChunkSize').value, 10),
+                decoderVariants: parseInt(document.getElementById('rangeDecoderVariants').value, 10)
+            };
+
+            try {
+                btn.disabled = true;
+                loadingOverlay.classList.remove('hidden'); // ローディング表示
+                outputEditor.setValue("// Obfuscating...");
+                statsLabel.textContent = "Size: Calculating...";
+                setProgress(0, 'Initializing...');
+                setProgress(3, 'Starting worker');
+
+                const workerOutput = await runObfuscationWorker(code, appConfig);
+                outputEditor.setValue(workerOutput);
+
+                let workerInputLen = new TextEncoder().encode(code)["length"];
+                let workerOutputLen = new TextEncoder().encode(workerOutput)["length"];
+                let workerPercent = workerInputLen === 0 ? 0 : Math.round(((workerOutputLen - workerInputLen) / workerInputLen) * 100);
+                let workerSign = workerPercent >= 0 ? '+' : '';
+                statsLabel.textContent = `Size: ${workerInputLen} B -> ${workerOutputLen} B (${workerSign}${workerPercent}%)`;
+                return;
+            } catch (e) {
+                outputEditor.setValue("エラーが発生しました:\n" + e.message);
+                statsLabel.textContent = "Size: Error";
+                console.error(e);
+            } finally {
+                loadingOverlay.classList.add('hidden'); // ローディング非表示
+                btn.disabled = false;
+            }
+        });
+    </script>
+</body>
+</html>
