@@ -459,8 +459,9 @@
             const runnerName = generateWwmMName();
             
             // ★ デコーダー側の配列を削除し、 C=atob("...") とビットシフトで復元する極小コードに変更
-            return `(function(){var ${runnerName}=${JSON.stringify(packed)},k=${JSON.stringify(key)},q=${seed}>>>0,f=String[${createRuntimeStringCode('fromCharCode')}];function o(n){for(var a=[],i=0;i<n;i++)a[i]=i;var s=q||1;for(i=0;i<n;i++){s=Math.imul(s,2654435761)>>>0;var j=((s^(s>>>16))>>>0)%n,l=((s^i)>>>0)%n,t=a[j];a[j]=a[l];a[l]=t}return a}function r(b,k){for(var s=[],i=0;i<256;i++)s[i]=i;for(var j=0,i=0;i<256;i++){j=(j+s[i]+k[i%k.length])&255;var t=s[i];s[i]=s[j];s[j]=t}for(var y=[],i=0,j=0,n=0;n<b.length;n++){i=(i+1)&255;j=(j+s[i])&255;t=s[i];s[i]=s[j];s[j]=t;y[n]=b[n]^s[(s[i]+s[j])&255]}return y}function u(a){for(var s="",i=0;i<a.length;i+=8192)s+=f.apply(null,a.slice(i,i+8192));return btoa(s)}var m={},C=atob("${b64Dict}"),i=0,v,b=[];for(;i<122;)m[f((C.charCodeAt(i*2)|C.charCodeAt(i*2+1)<<8)^${symKey})]=i++;for(i=0;i<${runnerName}.length;i+=4){v=m[${runnerName}[i]]+m[${runnerName}[i+1]]*122+m[${runnerName}[i+2]]*14884+m[${runnerName}[i+3]]*1815848;b.push(v>>16,(v>>8)&255,v&255)}b.length-=${pad};var p=o(b.length),e=[];for(i=0;i<p.length;i++)e[p[i]]=b[i];import("data:text/javascript;charset=utf-8;base64,"+u(r(e,k)))})();`;
+            return `(function(){var ${runnerName}=${JSON.stringify(packed)},k=${JSON.stringify(key)},q=${seed}>>>0,f=String[${createRuntimeStringCode('fromCharCode')}];function o(n){for(var a=[],i=0;i<n;i++)a[i]=i;var s=q||1;for(i=0;i<n;i++){s=Math.imul(s,2654435761)>>>0;var j=((s^(s>>>16))>>>0)%n,l=((s^i)>>>0)%n,t=a[j];a[j]=a[l];a[l]=t}return a}function r(b,k){for(var s=[],i=0;i<256;i++)s[i]=i;for(var j=0,i=0;i<256;i++){j=(j+s[i]+k[i%k.length])&255;var t=s[i];s[i]=s[j];s[j]=t}for(var y=[],i=0,j=0,n=0;n<b.length;n++){i=(i+1)&255;j=(j+s[i])&255;t=s[i];s[i]=s[j];s[j]=t;y[n]=b[n]^s[(s[i]+s[j])&255]}return y}function u(a){for(var s="",i=0;i<a.length;i+=8192)s+=f.apply(null,a.slice(i,i+8192));return encodeURIComponent(s)}var m={},C=atob("${b64Dict}"),i=0,v,b=[];for(;i<122;)m[f((C.charCodeAt(i*2)|C.charCodeAt(i*2+1)<<8)^${symKey})]=i++;for(i=0;i<${runnerName}.length;i+=4){v=m[${runnerName}[i]]+m[${runnerName}[i+1]]*122+m[${runnerName}[i+2]]*14884+m[${runnerName}[i+3]]*1815848;b.push(v>>16,(v>>8)&255,v&255)}b.length-=${pad};var p=o(b.length),e=[];for(i=0;i<p.length;i++)e[p[i]]=b[i];import("data:text/javascript,"+u(r(e,k)))})();`;
         }
+
         function markObfuscated(node) {
             if (!node || typeof node !== 'object') return;
             if (node._isObfuscated) return;
@@ -499,118 +500,68 @@
             if (!renameMap.has(name)) renameMap.set(name, generateWwmMName());
             return renameMap.get(name);
         }
-
-        function createAlphabetString(value) {
-            const pool = [];
-            for (let i = 32; i < 127; i++) pool["push"](String["fromCharCode"](i));
-            for (const ch of value) {
-                if (!pool.includes(ch)) pool["push"](ch);
-            }
-            pool.sort(() => getRandomValue() - 0.5);
-            return pool.join('');
-        }
-
         function createHiddenNumber(t, value) {
-            const r = getRandomInt(5);
-            if (r === 0) {
-                const key = getRandomInt(127) + 1;
-                return t.binaryExpression('^', t.numericLiteral(value ^ key), t.numericLiteral(key));
-            }
-            if (r === 1) {
-                const key = getRandomInt(255) + 1;
-                return t.binaryExpression('-', t.numericLiteral(value + key), t.numericLiteral(key));
-            }
-            if (r === 2) {
-                return t.unaryExpression('~', t.numericLiteral(~value));
-            }
-            if (r === 3) {
-                const shift = getRandomInt(3) + 1;
-                return t.binaryExpression('>>', t.numericLiteral(value << shift), t.numericLiteral(shift));
-            }
-            return t.binaryExpression('&', t.numericLiteral(value | 256), t.numericLiteral(255));
-        }
+    const r = getRandomInt(3);
+    if (r === 0) {
+        const key = getRandomInt(15) + 1; // 1〜2桁に制限して文字数を節約
+        return t.binaryExpression('^', t.numericLiteral(value ^ key), t.numericLiteral(key));
+    }
+    if (r === 1) {
+        const key = getRandomInt(15) + 1;
+        return t.binaryExpression('-', t.numericLiteral(value + key), t.numericLiteral(key));
+    }
+    return t.unaryExpression('~', t.numericLiteral(~value));
+}
 
-        function createRuntimeNumberCode(value) {
-            const r = getRandomInt(6);
-            if (r === 0) {
-                const key = getRandomInt(127) + 1;
-                return `(${value ^ key}^${key})`;
-            }
-            if (r === 1) {
-                const key = getRandomInt(255) + 1;
-                return `(${value + key}-${key})`;
-            }
-            if (r === 2) return `(~${~value})`;
-            if (r === 3) {
-                const shift = getRandomInt(3) + 1;
-                return `((${value << shift})>>${shift})`;
-            }
-            if (r === 4) return `((${value | 256})&255)`;
-            return `(((${value + 17})-9)-8)`;
-        }
+function createRuntimeNumberCode(value) {
+    const r = getRandomInt(3);
+    if (r === 0) {
+        const key = getRandomInt(15) + 1;
+        return `(${value ^ key}^${key})`;
+    }
+    if (r === 1) {
+        const key = getRandomInt(15) + 1;
+        return `(${value + key}-${key})`;
+    }
+    return `(~${~value})`;
+}
 
-        function createHiddenString(t, value) {
-            const alphabet = createAlphabetString(value);
-            const v_a = generateWwmMName(), v_b = generateWwmMName(), v_i = generateWwmMName();
-            return t.callExpression(
-                t.functionExpression(
-                    null,
-                    [t.identifier(v_a), t.identifier(v_b)],
-                    t.blockStatement([
-                        t.returnStatement(
-                            t.callExpression(
-                                t.memberExpression(
-                                    t.callExpression(
-                                        t.memberExpression(t.identifier(v_b), t.identifier('map')),
-                                        [t.functionExpression(null, [t.identifier(v_i)], t.blockStatement([t.returnStatement(t.memberExpression(t.identifier(v_a), t.identifier(v_i), true))]))]
-                                    ),
-                                    t.identifier('join')
-                                ),
-                                [t.stringLiteral('')]
-                            )
-                        )
-                    ])
-                ),
-                [
-                    t.stringLiteral(alphabet),
-                    t.arrayExpression(Array.from(value).map(ch => createHiddenNumber(t, alphabet.indexOf(ch))))
-                ]
-            );
-        }
+        // 修正後
+function createHiddenString(t, value) {
+    return t.callExpression(
+        t.memberExpression(t.identifier('String'), t.stringLiteral('fromCharCode'), true),
+        Array.from(value).map(ch => createHiddenNumber(t, ch.charCodeAt(0)))
+    );
+}
 
         function createHiddenMember(t, objectNode, propertyName) {
             return t.memberExpression(objectNode, createHiddenString(t, propertyName), true);
         }
 
-        function createRuntimeStringCode(value) {
-            const alphabet = createAlphabetString(value);
-            const indexes = Array.from(value).map(ch => createRuntimeNumberCode(alphabet.indexOf(ch))).join(',');
-            return `(function(a,b){return b.map(function(i){return a[i]}).join("")})(${JSON.stringify(alphabet)},[${indexes}])`;
-        }
+        // 修正後
+function createRuntimeStringCode(value) {
+    const codes = Array.from(value).map(ch => createRuntimeNumberCode(ch.charCodeAt(0))).join(',');
+    return `String.fromCharCode(${codes})`;
+}
 
         // 最適化で消されにくい不透明述語
-        // 【修正後】メソッド呼び出しを全て t.stringLiteral(名前), true に変更
-        function createOpaqueTrue(t) {
-            const r = getRandomInt(4);
-            let expr;
-            if (r === 0) expr = t.binaryExpression('>', t.binaryExpression('+', t.callExpression(createHiddenMember(t, t.identifier(v_Date_name), 'now'), []), t.numericLiteral(1)), t.numericLiteral(0));
-            else if (r === 1) expr = t.binaryExpression('>', t.binaryExpression('+', t.callExpression(createHiddenMember(t, t.identifier(v_Math_name), 'random'), []), t.numericLiteral(1)), t.numericLiteral(0));
-            else if (r === 2) expr = t.binaryExpression('>', t.callExpression(createHiddenMember(t, t.newExpression(t.identifier(v_Date_name), []), 'getTime'), []), t.numericLiteral(0));
-            else {
-                expr = t.binaryExpression('>=',
-                    t.memberExpression(
-                        t.callExpression(
-                            createHiddenMember(t, t.identifier(v_Crypto_name), 'getRandomValues'),
-                            [t.newExpression(t.identifier('Uint8Array'), [t.numericLiteral(1)])]
-                        ),
-                        t.numericLiteral(0), true
-                    ),
-                    t.numericLiteral(0)
-                );
-            }
-            markObfuscated(expr);
-            return expr;
-        }
+        // 修正後
+function createOpaqueTrue(t) {
+    const r = getRandomInt(3);
+    let expr;
+    if (r === 0) {
+        // Date['now']() > 0
+        expr = t.binaryExpression('>', t.callExpression(t.memberExpression(t.identifier(v_Date_name), t.stringLiteral('now'), true), []), t.numericLiteral(0));
+    } else if (r === 1) {
+        // Math['random']() >= 0
+        expr = t.binaryExpression('>=', t.callExpression(t.memberExpression(t.identifier(v_Math_name), t.stringLiteral('random'), true), []), t.numericLiteral(0));
+    } else {
+        // [] !== [] (常にtrueになる最短の条件式のひとつ)
+        expr = t.binaryExpression('!==', t.arrayExpression([]), t.arrayExpression([]));
+    }
+    markObfuscated(expr);
+    return expr;
+}
 
         function createOpaqueZero(t) {
             let expr = t.conditionalExpression(createOpaqueTrue(t), t.numericLiteral(0), t.numericLiteral(getRandomInt(1000) + 1));
@@ -1210,6 +1161,7 @@
         function setProgress(percent, label) {
             document.getElementById('progressPercent').textContent = percent + '%';
             document.getElementById('progressLabel').textContent = label;
+            appendLog('info',[label]);
         }
 
         function runObfuscationWorker(code, config) {
@@ -1265,8 +1217,7 @@ function fragmentRuntimeSource(source, chunkCount) {
     const order = createShuffleOrder(chunks.length, seed);
     const shuffled = order.map(i => chunks[i]);
     
-    // ★修正: var j=((s^(s>>>16))>>>0)%a.length, k=((s^i)>>>0)%a.length へ変更
-    return '(function(a,q){for(var o=[],i=0;i<a.length;i++)o[i]=i;var s=q;if(s===0)s=1;for(i=0;i<a.length;i++){s=Math.imul(s,2654435761)>>>0;var j=((s^(s>>>16))>>>0)%a.length,k=((s^i)>>>0)%a.length,t=o[j];o[j]=o[k];o[k]=t}for(var str=\"\",e=[],i=0;i<o.length;i++)e[o[i]]=a[i];for(i=0;i<e.length;i++)str+=e[i];import(\"data:text/javascript;charset=utf-8;base64,\"+btoa(unescape(encodeURIComponent(str))))})(' + JSON.stringify(shuffled) + ',' + seed + '>>>0);';
+    return '(function(a,q){for(var o=[],i=0;i<a.length;i++)o[i]=i;var s=q;if(s===0)s=1;for(i=0;i<a.length;i++){s=Math.imul(s,2654435761)>>>0;var j=((s^(s>>>16))>>>0)%a.length,k=((s^i)>>>0)%a.length,t=o[j];o[j]=o[k];o[k]=t}for(var str=\"\",e=[],i=0;i<o.length;i++)e[o[i]]=a[i];for(i=0;i<e.length;i++)str+=e[i];import(\"data:text/javascript,\"+encodeURIComponent(str))})(' + JSON.stringify(shuffled) + ',' + seed + '>>>0);';
 }
 const yieldToEventLoop = () => new Promise(resolve => setTimeout(resolve, 15));
 async function runObfuscation(code, config) {
