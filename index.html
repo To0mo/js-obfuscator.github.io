@@ -748,6 +748,19 @@
         }
 
         // --- プラグイン ---
+        function LetConstToVarPlugin({ types: t }) {
+            return {
+                visitor: {
+                    VariableDeclaration(path) {
+                        if (path.node._isObfuscated) return;
+                        if (path.node.kind === 'let' || path.node.kind === 'const') {
+                            path.node.kind = 'var';
+                        }
+                    }
+                }
+            };
+        }
+
         function PropertyToComputedPlugin({ types: t }) {
             return {
                 visitor: {
@@ -884,6 +897,28 @@ let replacement = t.memberExpression(
             const v_nextLocal = generateWwmMName();
             const v_nextPrev = generateWwmMName();
 
+            // ↓★★ ここから追加 ★★
+            function replaceReturns(node) {
+                if (!node || typeof node !== 'object') return;
+                // 他の関数スコープやクラスメソッドに入った場合は探索を中断
+                if (['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression', 'ClassMethod', 'ObjectMethod'].includes(node.type)) {
+                    return;
+                }
+                if (node.type === 'ReturnStatement') {
+                    node.argument = t.objectExpression([
+                        t.objectProperty(t.stringLiteral(v_ret), t.booleanLiteral(true)),
+                        t.objectProperty(t.stringLiteral(v_val), node.argument || t.unaryExpression("void", t.numericLiteral(0)))
+                    ]);
+                    return;
+                }
+                for (const key in node) {
+                    if (Array.isArray(node[key])) {
+                        node[key].forEach(replaceReturns);
+                    } else if (node[key] && typeof node[key] === 'object') {
+                        replaceReturns(node[key]);
+                    }
+                }
+            }
             return {
                 visitor: {
                     BlockStatement: {
@@ -1052,6 +1087,7 @@ let replacement = t.memberExpression(
 
                                 let funcBody;
                                 if (s.type === 'normal') {
+                                    replaceReturns(s.stmt);
                                     let retNext = createTransitionObj(t.numericLiteral(getShuffled(s.next)), t.numericLiteral(getExpected(s.next)));
                                     if (t.isExpressionStatement(s.stmt)) {
                                         funcBody = [t.returnStatement(t.sequenceExpression([s.stmt.expression, retNext]))];
@@ -1667,7 +1703,7 @@ async function runObfuscation(code, config) {
     let currentCode = code;
     
     progress(10, 'Phase 0: Global to Window Conversion');
-    let res0 = Babel.transform(currentCode, { plugins: [GlobalToWindowPlugin], ...BABEL_PARSE_OPTIONS });
+    let res0 = Babel.transform(currentCode, { plugins: [GlobalToWindowPlugin, LetConstToVarPlugin], ...BABEL_PARSE_OPTIONS });
     currentCode = res0.code;
     await yieldToEventLoop();
 
