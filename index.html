@@ -1147,7 +1147,7 @@ let replacement = t.memberExpression(
             };
         }
 
-        function buildObfuscatedStringNode(t, str) {
+        function buildObfuscatedStringNode(t, str, disableChunks = false) {
             if (str === "") {
                 const emptyNode = t.stringLiteral("");
                 emptyNode._isObfuscated = true;
@@ -1155,7 +1155,8 @@ let replacement = t.memberExpression(
             }
 
             const chunks = [];
-            if (appConfig.stringChunks) {
+            // ★ disableChunks が true の時はチャンク分割をスキップする
+            if (appConfig.stringChunks && !disableChunks) {
                 for (let i = 0; i < str.length; i += appConfig.chunkSize) {
                     chunks.push(str.slice(i, i + appConfig.chunkSize));
                 }
@@ -1231,11 +1232,14 @@ let replacement = t.memberExpression(
                 return arrayElements[0];
             }
 
+            // ★ "join" という文字列自体も難読化関数に通す (無限ループ防止のため true を渡す)
             const replacement = t.callExpression(
-                t.memberExpression(t.arrayExpression(arrayElements), t.stringLiteral('join'), true),
-                [t.stringLiteral("")]
+                t.memberExpression(t.arrayExpression(arrayElements), buildObfuscatedStringNode(t, 'join', true), true),
+                [buildObfuscatedStringNode(t, "", true)]
             );
-            markObfuscated(replacement);
+            
+            // markObfuscated で塗りつぶさず、ルートノードのみにフラグを立てる
+            replacement._isObfuscated = true; 
             return replacement;
         }
 
@@ -1470,13 +1474,10 @@ let replacement = t.memberExpression(
                             expr = t.binaryExpression('+', expr, buildObfuscatedStringNode(t, path.node.quasis[i + 1].value.cooked || ""));
                         }
 
-                        if (path.node.expressions.length === 0) {
-                            path.replaceWith(expr);
-                        } else {
-                            markObfuscated(expr);
-                            path.replaceWith(expr);
-                        }
-                        path.skip();
+                        // ★ markObfuscated(expr) と path.skip() を削除。
+                        // これによりテンプレートリテラル内の ${AppConfig.label} などの変数・プロパティが
+                        // 引き続き後続の難読化プラグインに処理されるようになります。
+                        path.replaceWith(expr);
                     }
                 }
             };
