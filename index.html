@@ -278,9 +278,9 @@
                     <label class="flex items-center gap-3 cursor-pointer text-[#D4D4D4] hover:text-white"><input
                             type="checkbox" id="chkEnvBinding" checked> Environment Binding</label>
                     <label class="flex items-center gap-3 cursor-pointer text-[#D4D4D4] hover:text-white"><input
-                            type="checkbox" id="chkIntegrityCheck" checked> Integrity Check</label>
+                            type="checkbox" id="chkDynamicObject" checked> Dynamic Object Build</label>
                     <label class="flex items-center gap-3 cursor-pointer text-[#D4D4D4] hover:text-white"><input
-                            type="checkbox" id="chkDistributedWatchers" checked> Distributed Watchers</label>
+                            type="checkbox" id="chkPrimitiveObfuscation" checked> Primitive Obfuscation</label>
                 </div>
 
                 <!-- 列3 -->
@@ -537,18 +537,20 @@
             "public", "static", "true", "false", "null", "undefined"
         ]);
 
-        // --- CSPRNG ヘルパー (ツール内部用) ---
+        const _randBuf = new Uint32Array(1);
         function getRandomValue() {
-    if (!globalThis.crypto?.getRandomValues) return Math.random();
-    return crypto.getRandomValues(new Uint32Array(1))[0] / 0x100000000;
-}
+            if (!globalThis.crypto?.getRandomValues) return Math.random();
+            return crypto.getRandomValues(_randBuf)[0] / 0x100000000;
+        }
+
         function getRandomInt(max) {
             return Math.floor(getRandomValue() * max);
         }
 
+        const _textEncoder = new TextEncoder();
         function toUtf8Bytes(str) {
-    return [...new TextEncoder().encode(str)];
-}
+            return Array.from(_textEncoder.encode(str));
+        }
 
         function rotateByteLeft(value, shift) {
             shift &= 7;
@@ -556,33 +558,35 @@
         }
 
         function rc4Bytes(bytes, key) {
-    let s = [...Array(256).keys()], j = 0, i = 0, out = [];
-    for (; i < 256; i++) {
-        j = (j + s[i] + key[i % key.length]) & 255;
-        [s[i], s[j]] = [s[j], s[i]];
-    }
-    i = j = 0;
-    for (let b of bytes) {
-        i = (i + 1) & 255;
-        j = (j + s[i]) & 255;
-        [s[i], s[j]] = [s[j], s[i]];
-        out.push(b ^ s[(s[i] + s[j]) & 255]);
-    }
-    return out;
-}
+            let s = new Uint8Array(256), j = 0, i = 0;
+            for (; i < 256; i++) s[i] = i;
+            let out = new Uint8Array(bytes.length);
+            for (i = 0; i < 256; i++) {
+                j = (j + s[i] + key[i % key.length]) & 255;
+                let t = s[i]; s[i] = s[j]; s[j] = t;
+            }
+            i = j = 0;
+            for (let k = 0; k < bytes.length; k++) {
+                i = (i + 1) & 255;
+                j = (j + s[i]) & 255;
+                let t = s[i]; s[i] = s[j]; s[j] = t;
+                out[k] = bytes[k] ^ s[(s[i] + s[j]) & 255];
+            }
+            return Array.from(out);
+        }
 
         function createShuffleOrder(length, seed) {
-    const order = [...Array(length).keys()];
+            const order = new Uint32Array(length);
+            for (let i = 0; i < length; i++) order[i] = i;
             let s = seed >>> 0;
-            if (s === 0) s = 1; // 0除算・ゼロ固定化の回避
+            if (s === 0) s = 1;
             for (let i = 0; i < length; i++) {
                 s = Math.imul(s, 2654435761) >>> 0;
-                // ★修正: XOR演算結果を >>> 0 で符号なし(正の数)に強制してから % を計算する
                 let j = ((s ^ (s >>> 16)) >>> 0) % length;
                 let k = ((s ^ i) >>> 0) % length;
                 let t = order[j]; order[j] = order[k]; order[k] = t;
             }
-            return order;
+            return Array.from(order);
         }
         function packUtf8Rc4ShuffleBase122(source) {
             // 英数字(62) + 指定記号(12) + 普通の記号(21) + ギリシャ文字(24) + その他(3) = ちょうど122種類
@@ -705,8 +709,12 @@
         }
 
         function createHexString(value) {
-    return [...value].map(ch => ch.charCodeAt(0).toString(16).padStart(2, '0')).join('');
-}
+            let hex = "";
+            for (let i = 0; i < value.length; i++) {
+                hex += value.charCodeAt(i).toString(16).padStart(2, '0');
+            }
+            return hex;
+        }
 
         function createRuntimeStringCode(value, decoderName) {
             const hex = createHexString(value);
@@ -748,6 +756,87 @@
         }
 
         // --- プラグイン ---
+        function PrimitiveObfuscationPlugin({ types: t }) {
+            return {
+                visitor: {
+                    BooleanLiteral(path) {
+                        if (!appConfig.primitiveObfuscation) return;
+                        if (path.node._isObfuscated) return;
+                        // true -> !![] / false -> ![]
+                        let expr = path.node.value 
+                            ? t.unaryExpression('!', t.unaryExpression('!', t.arrayExpression([]))) 
+                            : t.unaryExpression('!', t.arrayExpression([]));
+                        
+                        // markObfuscated はあえて呼ばない（他の変換を阻害しないため）
+                        path.replaceWith(expr);
+                    },
+                    Identifier(path) {
+                        if (!appConfig.primitiveObfuscation) return;
+                        if (path.node._isObfuscated) return;
+                        
+                        const parentKey = path.key; // ← 修正: path.parentKey ではなく path.key
+                        const parentPath = path.parentPath;
+
+                        if ((parentKey === 'property' || parentKey === 'key') && !parentPath.node.computed) return;
+                        if (parentPath.isAssignmentPattern() && parentKey === 'left') return;
+                        if (parentPath.isRestElement()) return;
+
+                        if (['undefined', 'NaN', 'Infinity'].includes(path.node.name)) {
+                            // ← hasBinding チェックを削除 (Babelのグローバル誤検知を防ぐ)
+
+                            let expr;
+                            if (path.node.name === 'undefined') expr = t.unaryExpression('void', t.numericLiteral(0));
+                            else if (path.node.name === 'NaN') expr = t.binaryExpression('/', t.numericLiteral(0), t.numericLiteral(0));
+                            else if (path.node.name === 'Infinity') expr = t.binaryExpression('/', t.numericLiteral(1), t.numericLiteral(0));
+                            
+                            // markObfuscated はあえて呼ばない（中の 0 や 1 を数値難読化の対象にさせるため）
+                            path.replaceWith(expr);
+                        }
+                    }
+                }
+            };
+        }
+        function DynamicObjectPlugin({ types: t }) {
+            return {
+                visitor: {
+                    VariableDeclaration(path) {
+                        if (!appConfig.dynamicObject) return;
+                        if (path.node._isObfuscated) return;
+                        
+                        if (path.parentPath.isForStatement() || path.parentPath.isForInStatement() || path.parentPath.isForOfStatement() || path.parentPath.isExportDeclaration()) return;
+
+                        let assignments = [];
+                        path.node.declarations.forEach(decl => {
+                            if (decl.init && t.isObjectExpression(decl.init) && decl.init.properties.length > 0) {
+                                if (decl.init.properties.some(p => !t.isObjectProperty(p))) return;
+                                
+                                let objId = decl.id;
+                                if (!t.isIdentifier(objId)) return;
+
+                                let properties = decl.init.properties;
+                                decl.init = t.objectExpression([]); 
+                                
+                                properties.forEach(prop => {
+                                    let key = prop.key;
+                                    if (!prop.computed && t.isIdentifier(key)) key = t.stringLiteral(key.name);
+                                    let assign = t.expressionStatement(
+                                        t.assignmentExpression('=', t.memberExpression(t.cloneNode(objId), key, true), prop.value)
+                                    );
+                                    
+                                    // ↓ ここにあった markObfuscated(assign); を完全に削除
+
+                                    assignments.push(assign);
+                                });
+                            }
+                        });
+
+                        if (assignments.length > 0) {
+                            path.insertAfter(assignments);
+                        }
+                    }
+                }
+            };
+        }
         function LetConstToVarPlugin({ types: t }) {
             return {
                 visitor: {
@@ -804,7 +893,8 @@
                         const name = path.node.name;
                         if (ignoreList.has(name)) return;
 
-                        const { parent, parentPath, parentKey } = path;
+                        const { parent, parentPath } = path;
+                        const parentKey = path.key;
 
                         // 1. プロパティ名やメソッド名として使われている場合を除外 (ドット記法やオブジェクトのキーなど)
                         // (★これにより obj?.prop のようなオプショナルチェーンも保護されます)
@@ -1726,16 +1816,28 @@ async function runObfuscation(code, config) {
         currentCode = res3.code;
         await yieldToEventLoop();
     }
-    progress(45, 'Phase 3.5: Property to StringLiteral');
+    progress(45, 'Phase 4: Property to StringLiteral');
     let res35 = Babel.transform(currentCode, { plugins: [PropertyToComputedPlugin], ...BABEL_PARSE_OPTIONS });
     currentCode = res35.code;
     await yieldToEventLoop();
-    progress(50, 'Phase 4: String Encoding & Array');
+    if (appConfig.primitiveObfuscation) {
+        progress(50, 'Phase 5: Primitives Obfuscation');
+        let res15 = Babel.transform(currentCode, { plugins: [PrimitiveObfuscationPlugin], ...BABEL_PARSE_OPTIONS });
+        currentCode = res15.code;
+        await yieldToEventLoop();
+    }
+    if (appConfig.dynamicObject) {
+        progress(55, 'Phase 6: Dynamic Objects');
+        let res16 = Babel.transform(currentCode, { plugins: [DynamicObjectPlugin], ...BABEL_PARSE_OPTIONS });
+        currentCode = res16.code;
+        await yieldToEventLoop();
+    }
+    progress(60, 'Phase 7: String Encoding & Array');
     let res4 = Babel.transform(currentCode, { plugins: [StringObfuscationPlugin], ...BABEL_PARSE_OPTIONS });
     currentCode = res4.code;
     await yieldToEventLoop();
 
-    progress(65, 'Phase 5: Bootstrap & Numbers');
+    progress(65, 'Phase 8: Bootstrap & Numbers');
     let bootstrapCode = [
         'var ' + v_Global_name + ' = (0, eval)("this");',
         'var ' + v_InlineDecoder_name + ' = function(h, m, k) { var s = ""; for (var i = 0; i < m["length"]; i++) { var p = m[i] * 2; s += ' + v_Global_name + '["String"]["fromCharCode"](' + v_Global_name + '["parseInt"](h[p]+h[p+1], 16) ^ k); } return s; };',
@@ -1755,7 +1857,7 @@ async function runObfuscation(code, config) {
     currentCode = bootstrapCode + res5.code;
     await yieldToEventLoop();
 
-    progress(75, 'Phase 6: Enforce Hexadecimal');
+    progress(75, 'Phase 9: Enforce Hexadecimal');
     let res6 = Babel.transform(currentCode, { 
         plugins: [HexNumberPlugin],
         minified: false,
@@ -1799,8 +1901,8 @@ self.onmessage = async (event) => {
                 proxyHook: document.getElementById('chkProxyHook'),
                 packer: document.getElementById('chkPacker'),
                 envBinding: document.getElementById('chkEnvBinding'),
-                integrityCheck: document.getElementById('chkIntegrityCheck'),
-                distributedWatchers: document.getElementById('chkDistributedWatchers'),
+                dynamicObject: document.getElementById('chkDynamicObject'),
+                primitiveObfuscation: document.getElementById('chkPrimitiveObfuscation'),
                 fragmentedLaunch: document.getElementById('chkFragmentedLaunch'),
                 fragmentChunks: document.getElementById('rangeFragmentChunks'),
                 cff: document.getElementById('chkCFF'),
@@ -1821,8 +1923,8 @@ self.onmessage = async (event) => {
                 proxyHook: controls.proxyHook.checked,
                 packer: controls.packer.checked,
                 envBinding: controls.envBinding.checked,
-                integrityCheck: controls.integrityCheck.checked,
-                distributedWatchers: controls.distributedWatchers.checked,
+                dynamicObject: controls.dynamicObject.checked,
+                primitiveObfuscation: controls.primitiveObfuscation.checked,
                 fragmentedLaunch: controls.fragmentedLaunch.checked,
                 fragmentChunks: parseInt(controls.fragmentChunks.value, 10),
                 cff: controls.cff.checked,
